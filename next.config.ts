@@ -1,3 +1,4 @@
+// CYA Concept Library
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
