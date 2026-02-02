@@ -134,7 +134,10 @@ export function CanvasControls({
                   </FilterPill>
                 ))}
               </div>
-              <ControlButton onClick={() => toggleMode('filter')}>
+              <ControlButton onClick={() => {
+                setMode('zoom')
+                onCategoryChange(null)
+              }}>
                 <X className="size-[18px]" />
               </ControlButton>
             </div>
