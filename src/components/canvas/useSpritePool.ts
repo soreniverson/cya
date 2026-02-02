@@ -219,6 +219,11 @@ export function useSpritePool(): SpritePool {
     const showImages = lod !== 'placeholder'
     const useThumb = viewport.zoom < LOD.SHOW_DATE
 
+    // Debug: log filter state once when it changes
+    if (isFiltering && filteredIndices.size > 0) {
+      console.log(`SpritePool: isFiltering=${isFiltering}, isClusterMode=${isClusterMode}, filtered=${filteredIndices.size}/${totalConcepts}`)
+    }
+
     // Only recalculate cluster layout when needed (signature changed or mode changed)
     const currentSignature = isClusterMode ? getFilterSignature(filteredIndices) : ''
     const centerMoved = isClusterMode && (

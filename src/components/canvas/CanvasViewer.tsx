@@ -54,6 +54,11 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
       }
     })
 
+    // Debug logging
+    if (selectedCategory) {
+      console.log(`Filter: "${selectedCategory}" -> ${indices.size}/${concepts.length} concepts match`)
+    }
+
     return indices
   }, [concepts, debouncedSearchQuery, selectedCategory])
 
