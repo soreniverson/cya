@@ -420,6 +420,19 @@ export function CanvasControls({
         .scrollbar-none::-webkit-scrollbar {
           display: none;
         }
+
+        /* Filter pill hover - sliding background from left */
+        .filter-pill:not([data-active]) {
+          background-image: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.05));
+          background-size: 0% 100%;
+          background-repeat: no-repeat;
+          background-position: left center;
+          transition: background-size 0.2s ease-out, color 0.15s;
+        }
+
+        .filter-pill:not([data-active]):hover {
+          background-size: 100% 100%;
+        }
       `}</style>
     </>
   )
@@ -464,25 +477,15 @@ function FilterPill({
   return (
     <button
       onClick={onClick}
+      data-active={active || undefined}
       className={cn(
-        "group relative px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors duration-150 overflow-hidden",
-        active ? "text-white" : "text-neutral-400 hover:text-white"
+        "filter-pill relative px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors duration-150",
+        active
+          ? "text-white bg-white/15"
+          : "text-neutral-400 hover:text-white"
       )}
     >
-      {/* Active background */}
-      <span
-        className={cn(
-          "absolute inset-0 bg-white/15 rounded-full transition-transform duration-200 ease-out",
-          active ? "scale-100" : "scale-0"
-        )}
-      />
-      {/* Hover background - slides from left */}
-      {!active && (
-        <span
-          className="absolute inset-0 bg-white/5 rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-200 ease-out origin-left"
-        />
-      )}
-      <span className="relative z-10">{children}</span>
+      {children}
     </button>
   )
 }
