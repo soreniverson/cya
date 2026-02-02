@@ -9,11 +9,9 @@ import {
   type Viewport,
   type GridConfig,
   getCardKey,
-  getLODLevel,
   getThumbUrl,
   getMidUrl,
   getCardWorldPosition,
-  getCategoryColor,
   CARD_SIZE,
   CELL_SIZE,
   LOD,
@@ -24,7 +22,6 @@ import {
 interface PooledCard {
   key: string
   container: Container
-  background: Graphics | null        // Category-colored background placeholder
   imageSprite: Sprite | null
   mask: Graphics | null              // Rounded corner mask
   conceptIndex: number
@@ -45,8 +42,6 @@ interface PooledCard {
   imageAlpha: number
   // Mask state
   lastMaskRadius: number
-  // Background state
-  lastBgColor: number
 }
 
 // Animation config
@@ -135,14 +130,12 @@ export function useSpritePool(): SpritePool {
       card.hasThumb = false
       card.hasMid = false
       card.lastMaskRadius = -1
-      card.lastBgColor = -1
     } else {
       const container = new Container()
 
       card = {
         key,
         container,
-        background: null,
         imageSprite: null,
         mask: null,
         conceptIndex: index,
@@ -159,7 +152,6 @@ export function useSpritePool(): SpritePool {
         targetScale: 1,
         imageAlpha: 0,
         lastMaskRadius: -1,
-        lastBgColor: -1,
       }
 
       getContainer().addChild(container)
@@ -181,14 +173,10 @@ export function useSpritePool(): SpritePool {
       card.imageSprite.visible = false
       card.imageSprite.mask = null
     }
-    if (card.background) {
-      card.background.visible = false
-    }
     card.currentTextureUrl = null
     card.hasThumb = false
     card.hasMid = false
     card.lastMaskRadius = -1
-    card.lastBgColor = -1
 
     recyclePoolRef.current.push(card)
   }, [])
@@ -254,8 +242,6 @@ export function useSpritePool(): SpritePool {
     container.y = viewport.height / 2 - viewport.pan.y * viewport.zoom
 
     const isFiltering = filteredIndices.size < totalConcepts
-    const lod = getLODLevel(viewport.zoom)
-    const showImages = lod !== 'placeholder'
 
     // Only recalculate cluster layout when needed (signature changed or mode changed)
     const currentSignature = isClusterMode ? getFilterSignature(filteredIndices) : ''
@@ -401,26 +387,9 @@ export function useSpritePool(): SpritePool {
       card.container.alpha = card.currentAlpha
       card.container.scale.set(card.currentScale)
 
-      // Draw category-colored background placeholder
-      if (concept) {
-        const bgColor = getCategoryColor(concept.category)
-        if (!card.background) {
-          card.background = new Graphics()
-          card.container.addChildAt(card.background, 0) // Add at bottom
-        }
-        // Only redraw if color changed
-        if (card.lastBgColor !== bgColor) {
-          card.background.clear()
-          card.background.rect(0, 0, CARD_SIZE, CARD_SIZE)
-          card.background.fill({ color: bgColor })
-          card.lastBgColor = bgColor
-        }
-        card.background.visible = true
-      }
-
       // Handle image sprite with two-tier loading
       // Rule: Always load thumb first, then mid when zoomed in. Never downgrade.
-      const shouldShowImage = showImages && card.currentAlpha > 0.1 && concept
+      const shouldShowImage = card.currentAlpha > 0.1 && concept
       if (shouldShowImage) {
         const thumbUrl = getThumbUrl(concept)
         const midUrl = getMidUrl(concept)
@@ -492,6 +461,7 @@ export function useSpritePool(): SpritePool {
             // Only create/update mask if radius is noticeable
             if (!card.mask) {
               card.mask = new Graphics()
+              card.mask.renderable = false // Don't render mask itself, only use as mask
               card.container.addChild(card.mask)
             }
             // Only redraw if radius changed significantly
