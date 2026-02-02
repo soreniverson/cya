@@ -27,7 +27,7 @@ export const VISIBLE_CARDS = {
 } as const
 
 // Momentum physics
-export const FRICTION = 0.92 // Smooth, controlled glide
+export const FRICTION = 0.85 // More friction = stops faster
 export const VELOCITY_STOP_THRESHOLD = 0.05 // Lower = smoother stop
 export const DRAG_SAMPLE_WINDOW_MS = 100 // Sample window for velocity calculation
 

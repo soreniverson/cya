@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import type { Concept, Category } from '@/lib/types'
 import { PixiCanvas, type PixiCanvasHandle } from './PixiCanvas'
 import { CanvasControls } from './CanvasControls'
 import { ConceptLightbox } from './ConceptLightbox'
-import { percentToZoom, zoomToPercent, DEFAULT_ZOOM } from './canvas-utils'
+import { percentToZoom, zoomToPercent, DEFAULT_ZOOM, MIN_ZOOM, CELL_SIZE } from './canvas-utils'
 
 interface CanvasViewerProps {
   concepts: Concept[]
@@ -42,6 +42,39 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
 
   // Cluster mode: when filtering by category
   const isClusterMode = selectedCategory !== null
+
+  // Auto-zoom to fit filtered items when filter changes
+  useEffect(() => {
+    if (selectedCategory && filteredIndices.size > 0) {
+      // Calculate zoom needed to fit all filtered items
+      const count = filteredIndices.size
+      const cols = Math.ceil(Math.sqrt(count * 1.5))
+      const rows = Math.ceil(count / cols)
+
+      // Estimate cluster size in pixels
+      const clusterWidth = cols * CELL_SIZE
+      const clusterHeight = rows * CELL_SIZE
+
+      // Get viewport size (use window as approximation)
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight - 120 // Account for controls
+
+      // Calculate zoom to fit cluster with padding
+      const zoomToFitWidth = viewportWidth / (clusterWidth * 1.2)
+      const zoomToFitHeight = viewportHeight / (clusterHeight * 1.2)
+      const idealZoom = Math.min(zoomToFitWidth, zoomToFitHeight)
+
+      // Clamp to reasonable range and apply
+      const targetZoom = Math.max(MIN_ZOOM, Math.min(0.5, idealZoom))
+      const targetPercent = zoomToPercent(targetZoom)
+
+      // Only zoom out if current zoom would cut off items
+      if (zoomPercent > targetPercent + 5) {
+        setZoomPercent(targetPercent)
+        canvasRef.current?.setZoom(targetZoom)
+      }
+    }
+  }, [selectedCategory, filteredIndices.size])
 
   // Handlers
   const handleCardClick = useCallback((concept: Concept) => {
