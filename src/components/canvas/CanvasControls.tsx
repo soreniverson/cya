@@ -51,10 +51,6 @@ export function CanvasControls({
       }
 
       switch (e.key) {
-        case 'r':
-        case 'R':
-          onRandomConcept()
-          break
         case 'Escape':
           setMode('zoom')
           onCategoryChange(null)
@@ -221,7 +217,7 @@ export function CanvasControls({
             </ControlButton>
             <ControlButton
               onClick={onRandomConcept}
-              title="Random concept (R)"
+              title="Random concept"
             >
               <Dices className="size-[18px]" />
             </ControlButton>
