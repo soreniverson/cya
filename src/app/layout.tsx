@@ -18,14 +18,22 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Can You Imagine",
     description: "A public archive of satirical UI/UX concepts by Soren Iverson",
-    url: "https://canyouimagine.com",
+    url: "https://canyouimagine.lol",
     siteName: "Can You Imagine",
     type: "website",
+    images: [
+      {
+        url: "https://canyouimagine.lol/og-image.png",
+        width: 1200,
+        height: 630,
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Can You Imagine",
     description: "A public archive of satirical UI/UX concepts by Soren Iverson",
+    images: ["https://canyouimagine.lol/og-image.png"],
   },
   robots: {
     index: true,
