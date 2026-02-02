@@ -110,9 +110,12 @@ export function CanvasControls({
       </div>
 
       {/* Bottom controls bar */}
-      <div className="absolute bottom-6 left-4 right-4 sm:left-6 sm:right-6 z-10 pointer-events-none pb-[env(safe-area-inset-bottom)]">
+      {/* Mobile: solid black bar behind controls */}
+      <div className="fixed bottom-0 left-0 right-0 h-24 bg-black z-[9] sm:hidden" />
+
+      <div className="absolute bottom-0 left-0 right-0 sm:bottom-6 sm:left-6 sm:right-6 z-10 pointer-events-none pb-[env(safe-area-inset-bottom)] sm:pb-0">
         {/* Mobile layout: 4 buttons or expanded control */}
-        <div className="flex items-center justify-center gap-2 sm:hidden pointer-events-auto">
+        <div className="flex items-center justify-center gap-3 py-4 px-4 sm:hidden pointer-events-auto">
           {mode === 'zoom' ? (
             // Default: 4 buttons in a row
             <>
@@ -438,7 +441,7 @@ function ControlButton({
       onClick={onClick}
       title={title}
       className={cn(
-        "size-11 rounded-full flex items-center justify-center transition-all duration-150",
+        "size-14 sm:size-11 rounded-full flex items-center justify-center transition-all duration-150",
         "bg-neutral-800/85 backdrop-blur-xl border border-white/[0.06]",
         "text-neutral-300 hover:text-white",
         active && "ring-1 ring-white/20 ring-inset"
