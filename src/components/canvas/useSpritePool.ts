@@ -37,7 +37,7 @@ interface PooledCard {
 }
 
 // Animation config
-const LERP_SPEED = 0.1 // How fast cards animate (0-1, lower = smoother)
+const LERP_SPEED = 0.12 // How fast cards animate (0-1, higher = faster)
 const CLUSTER_CARD_SCALE = 1.0 // Scale of cards in cluster
 
 export interface SpritePool {
@@ -81,7 +81,6 @@ export function useSpritePool(): SpritePool {
   const lastClusterModeRef = useRef<boolean>(false)
   const lastFilterSignatureRef = useRef<string>('')
   const lastClusterCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-
 
   const getContainer = useCallback((): Container => {
     if (!containerRef.current) {
@@ -241,7 +240,7 @@ export function useSpritePool(): SpritePool {
 
     const neededKeys = new Set<string>()
 
-    // Build a Set of visible concept indices for O(1) lookup
+    // Build a Set of visible concept indices for O(1) lookup (FIX: was O(n²))
     const visibleConceptIndices = new Set<number>()
     for (const vc of visibleCards) {
       visibleConceptIndices.add(vc.index % totalConcepts)
@@ -260,11 +259,12 @@ export function useSpritePool(): SpritePool {
     // In cluster mode, add synthetic cards for filtered indices not visible
     if (isClusterMode) {
       let addedCount = 0
-      const maxClusterCards = 150
+      const maxClusterCards = 150 // Cap to prevent performance issues
 
       for (const conceptIndex of filteredIndices) {
         if (addedCount >= maxClusterCards) break
 
+        // O(1) lookup instead of O(n) loop
         if (!visibleConceptIndices.has(conceptIndex)) {
           const clusterPos = clusterLayoutRef.current.get(conceptIndex)
           if (clusterPos) {
@@ -305,6 +305,7 @@ export function useSpritePool(): SpritePool {
 
       if (isClusterMode) {
         if (isMatching) {
+          // Move to cluster position
           const clusterPos = clusterLayoutRef.current.get(conceptIndex)
           if (clusterPos) {
             targetX = clusterPos.x
@@ -313,10 +314,12 @@ export function useSpritePool(): SpritePool {
           targetAlpha = 1
           targetScale = CLUSTER_CARD_SCALE
         } else {
+          // Fade out and scale down
           targetAlpha = 0
           targetScale = 0.8
         }
       } else if (isFiltering && !isMatching) {
+        // Regular filtering (not cluster mode) - hide non-matching cards
         targetAlpha = 0
         targetScale = 0.9
       }
@@ -325,6 +328,7 @@ export function useSpritePool(): SpritePool {
       let card = activeCardsRef.current.get(key)
       if (!card) {
         card = acquireCard(key, index, worldX, worldY)
+        // If entering cluster mode, start from grid position
         if (isClusterMode && isMatching) {
           card.currentX = worldX
           card.currentY = worldY
@@ -393,6 +397,7 @@ export function useSpritePool(): SpritePool {
             }
 
             card.lastTextureUrl = imageUrl
+            // Reset fade-in animation for new texture
             card.imageAlpha = 0
           }
 
@@ -401,6 +406,7 @@ export function useSpritePool(): SpritePool {
           card.imageSprite.alpha = card.imageAlpha
           card.imageSprite.visible = true
 
+          // Check if image is still animating
           if (card.imageAlpha < 0.99) {
             isAnimating = true
           }
@@ -420,6 +426,7 @@ export function useSpritePool(): SpritePool {
     // Release cards no longer needed
     for (const [key, card] of activeCardsRef.current) {
       if (!neededKeys.has(key)) {
+        // If card is fading out, keep it until fully transparent
         if (card.currentAlpha > 0.01) {
           card.targetAlpha = 0
           card.targetScale = 0.8

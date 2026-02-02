@@ -2,12 +2,7 @@
 
 import { useRef, useCallback } from 'react'
 import { Texture, Assets } from 'pixi.js'
-import { getCategoryColor } from './canvas-utils'
-
-// Configuration
-const MAX_TEXTURE_COUNT = 150 // Maximum textures in cache before eviction
-const EVICTION_BATCH_SIZE = 30 // Remove this many when over limit
-const MAX_CONCURRENT_LOADS = 6 // Total concurrent loads
+import { MAX_CONCURRENT_LOADS, getCategoryColor } from './canvas-utils'
 
 export interface TextureLoader {
   getTexture: (url: string) => Texture | null
@@ -18,45 +13,16 @@ export interface TextureLoader {
   hasPendingLoads: () => boolean
 }
 
-interface CacheEntry {
-  texture: Texture
-  lastUsed: number
-}
-
 export function useTextureLoader(): TextureLoader {
-  // LRU cache with metadata
-  const textureCache = useRef<Map<string, CacheEntry>>(new Map())
+  const textureCache = useRef<Map<string, Texture>>(new Map())
   const loadingSet = useRef<Set<string>>(new Set())
+  // Use Map for O(1) lookup instead of array.find() which is O(n)
   const loadQueueMap = useRef<Map<string, number>>(new Map()) // url -> priority
   const activeLoads = useRef<number>(0)
   const frameCount = useRef<number>(0)
 
-  // Evict least recently used textures when cache is too large
-  const evictIfNeeded = useCallback(() => {
-    const cache = textureCache.current
-    if (cache.size <= MAX_TEXTURE_COUNT) return
-
-    // Sort by lastUsed (oldest first)
-    const entries = Array.from(cache.entries())
-    entries.sort((a, b) => a[1].lastUsed - b[1].lastUsed)
-
-    // Evict oldest entries
-    const toEvict = entries.slice(0, EVICTION_BATCH_SIZE)
-
-    for (const [url, entry] of toEvict) {
-      entry.texture.destroy(true)
-      cache.delete(url)
-    }
-  }, [])
-
   const getTexture = useCallback((url: string): Texture | null => {
-    const entry = textureCache.current.get(url)
-    if (entry) {
-      // Update last used time (LRU tracking)
-      entry.lastUsed = Date.now()
-      return entry.texture
-    }
-    return null
+    return textureCache.current.get(url) ?? null
   }, [])
 
   const loadTexture = useCallback(async (url: string) => {
@@ -69,14 +35,7 @@ export function useTextureLoader(): TextureLoader {
 
     try {
       const texture = await Assets.load<Texture>(url)
-
-      textureCache.current.set(url, {
-        texture,
-        lastUsed: Date.now(),
-      })
-
-      // Check if we need to evict
-      evictIfNeeded()
+      textureCache.current.set(url, texture)
     } catch (error) {
       // Silently fail - will show placeholder
       console.warn('Failed to load:', url)
@@ -84,26 +43,27 @@ export function useTextureLoader(): TextureLoader {
       loadingSet.current.delete(url)
       activeLoads.current--
     }
-  }, [evictIfNeeded])
+  }, [])
 
   const processQueue = useCallback(() => {
     frameCount.current++
 
     if (loadQueueMap.current.size === 0) return
 
-    // Only process every 10 frames to reduce overhead
-    if (frameCount.current % 10 !== 0 && activeLoads.current >= MAX_CONCURRENT_LOADS / 2) {
-      return
+    // Convert to array and sort only when we need to process
+    // Only sort every 10 frames to reduce overhead
+    let toProcess: Array<[string, number]> | null = null
+    if (frameCount.current % 10 === 0 || activeLoads.current < MAX_CONCURRENT_LOADS) {
+      toProcess = Array.from(loadQueueMap.current.entries())
+      toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority
     }
 
-    // Convert to array and sort by priority
-    const toProcess = Array.from(loadQueueMap.current.entries())
-    toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority (lower = higher priority)
+    if (!toProcess) return
 
-    // Process up to 4 per frame
+    // Process up to max concurrent loads
     let processed = 0
-    for (const [url] of toProcess) {
-      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 4) break
+    for (const [url, _priority] of toProcess) {
+      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 6) break
 
       if (textureCache.current.has(url) || loadingSet.current.has(url)) {
         loadQueueMap.current.delete(url)
@@ -121,6 +81,7 @@ export function useTextureLoader(): TextureLoader {
     if (textureCache.current.has(url)) return
     if (loadingSet.current.has(url)) return
 
+    // O(1) check and update
     const existing = loadQueueMap.current.get(url)
     if (existing !== undefined) {
       // Update priority if better (lower = higher priority)

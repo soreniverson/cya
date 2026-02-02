@@ -20,19 +20,16 @@ export const LOD = {
 } as const
 
 // Momentum physics
-export const FRICTION = 0.92 // Higher = more momentum (0.92 = smooth, controlled glide)
-export const VELOCITY_STOP_THRESHOLD = 0.05 // Lower = smoother stop
-export const DRAG_SAMPLE_WINDOW_MS = 100 // Sample window for velocity calculation
-
-// Smooth zoom
-export const ZOOM_LERP_SPEED = 0.15 // How fast zoom animates (0-1, higher = faster)
+export const FRICTION = 0.96 // Higher = more momentum (smoother glide)
+export const VELOCITY_STOP_THRESHOLD = 0.1 // Lower = smoother stop
+export const DRAG_SAMPLE_WINDOW_MS = 80 // Shorter = more responsive
 
 // Animation
 export const SHUFFLE_DURATION = 600
 export const RECENTER_DURATION = 500
 
 // Image loading
-export const MAX_CONCURRENT_LOADS = 8 // Reduced for smoother scrolling/zooming
+export const MAX_CONCURRENT_LOADS = 12 // Browser can handle ~6 per domain, we have CDN
 
 // Theme colors
 export const COLORS = {
