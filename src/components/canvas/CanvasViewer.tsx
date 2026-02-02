@@ -55,24 +55,24 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
       const clusterWidth = cols * CELL_SIZE
       const clusterHeight = rows * CELL_SIZE
 
-      // Get viewport size - account for controls (more on mobile)
+      // Get viewport size (use window as approximation)
       const viewportWidth = window.innerWidth
-      const isMobile = viewportWidth < 640
-      const controlsHeight = isMobile ? 80 : 120
-      const viewportHeight = window.innerHeight - controlsHeight
+      const viewportHeight = window.innerHeight - 120 // Account for controls
 
       // Calculate zoom to fit cluster with padding
-      const zoomToFitWidth = viewportWidth / (clusterWidth * 1.3)
-      const zoomToFitHeight = viewportHeight / (clusterHeight * 1.3)
+      const zoomToFitWidth = viewportWidth / (clusterWidth * 1.2)
+      const zoomToFitHeight = viewportHeight / (clusterHeight * 1.2)
       const idealZoom = Math.min(zoomToFitWidth, zoomToFitHeight)
 
       // Clamp to reasonable range and apply
-      const targetZoom = Math.max(MIN_ZOOM, Math.min(0.6, idealZoom))
+      const targetZoom = Math.max(MIN_ZOOM, Math.min(0.5, idealZoom))
       const targetPercent = zoomToPercent(targetZoom)
 
-      // Apply zoom to fit the filtered items
-      setZoomPercent(targetPercent)
-      canvasRef.current?.setZoom(targetZoom)
+      // Only zoom out if current zoom would cut off items
+      if (zoomPercent > targetPercent + 5) {
+        setZoomPercent(targetPercent)
+        canvasRef.current?.setZoom(targetZoom)
+      }
     }
   }, [selectedCategory, filteredIndices.size])
 
