@@ -30,10 +30,19 @@ export function CanvasControls({
 }: CanvasControlsProps) {
   const [mode, setMode] = useState<ControlMode>('zoom')
   const [isInfoOpen, setIsInfoOpen] = useState(false)
+  const [canUseShortcuts, setCanUseShortcuts] = useState(false)
+
+  // Delay before keyboard shortcuts are active (prevents accidental triggers on page load)
+  useEffect(() => {
+    const timer = setTimeout(() => setCanUseShortcuts(true), 500)
+    return () => clearTimeout(timer)
+  }, [])
 
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!canUseShortcuts) return
+
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
@@ -56,7 +65,7 @@ export function CanvasControls({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onRandomConcept, onCategoryChange])
+  }, [onRandomConcept, onCategoryChange, canUseShortcuts])
 
   const toggleMode = (targetMode: ControlMode) => {
     if (mode === targetMode) {
