@@ -28,20 +28,22 @@ export async function generateMetadata({ params }: ConceptPageProps): Promise<Me
     ? concept.caption.slice(0, 160)
     : `A satirical UI/UX concept by Soren Iverson`
 
+  const ogImage = concept.mid_url || concept.image_url
+
   return {
     title: `${concept.title} | Can You Imagine`,
     description,
     openGraph: {
       title: concept.title,
       description,
-      images: [{ url: concept.image_url, width: concept.image_width, height: concept.image_height }],
+      images: [{ url: ogImage, width: concept.image_width, height: concept.image_height }],
       type: 'article',
     },
     twitter: {
       card: 'summary_large_image',
       title: concept.title,
       description,
-      images: [concept.image_url],
+      images: [ogImage],
     },
   }
 }
@@ -113,7 +115,7 @@ export default async function ConceptPage({ params, searchParams }: ConceptPageP
           {/* Image */}
           <div className="relative aspect-[4/5] max-h-[70vh] bg-[#111] overflow-hidden">
             <Image
-              src={concept.image_url}
+              src={concept.mid_url || concept.image_url}
               alt={concept.title}
               fill
               sizes="(max-width: 1024px) 100vw, 800px"

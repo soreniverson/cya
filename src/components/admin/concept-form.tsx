@@ -37,7 +37,7 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
   const [isPublished, setIsPublished] = useState(concept?.is_published ?? true)
   const [imageUrl, setImageUrl] = useState(concept?.image_url ?? '')
   const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(concept?.image_url ?? null)
+  const [imagePreview, setImagePreview] = useState<string | null>(concept?.thumbnail_url ?? concept?.image_url ?? null)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

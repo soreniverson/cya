@@ -67,7 +67,7 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
           {concept && (
             <div className="relative aspect-square w-full bg-neutral-900">
               <Image
-                src={concept.image_url}
+                src={concept.mid_url || concept.image_url}
                 alt={concept.title}
                 fill
                 className="object-contain"

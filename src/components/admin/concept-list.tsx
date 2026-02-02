@@ -164,7 +164,7 @@ export function AdminConceptList({ concepts, categories }: AdminConceptListProps
                 <td className="px-4 py-3">
                   <div className="relative w-12 h-12 bg-[#111] rounded overflow-hidden">
                     <Image
-                      src={concept.image_url}
+                      src={concept.thumbnail_url || concept.image_url}
                       alt={concept.title}
                       fill
                       sizes="48px"

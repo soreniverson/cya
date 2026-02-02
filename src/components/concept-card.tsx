@@ -26,7 +26,7 @@ export function ConceptCard({ concept, priority = false }: ConceptCardProps) {
     >
       <div className="relative aspect-square overflow-hidden bg-[#111]">
         <Image
-          src={concept.image_url}
+          src={concept.thumbnail_url || concept.image_url}
           alt={concept.title}
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"

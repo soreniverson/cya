@@ -22,6 +22,7 @@ import {
 interface PooledCard {
   key: string
   container: Container
+  background: Graphics | null        // Dark background placeholder
   imageSprite: Sprite | null
   mask: Graphics | null              // Rounded corner mask
   conceptIndex: number
@@ -130,12 +131,23 @@ export function useSpritePool(): SpritePool {
       card.hasThumb = false
       card.hasMid = false
       card.lastMaskRadius = -1
+      // Show background again
+      if (card.background) {
+        card.background.visible = true
+      }
     } else {
       const container = new Container()
+
+      // Create dark background placeholder
+      const background = new Graphics()
+      background.rect(0, 0, CARD_SIZE, CARD_SIZE)
+      background.fill({ color: 0x171717 }) // Dark gray background
+      container.addChild(background)
 
       card = {
         key,
         container,
+        background,
         imageSprite: null,
         mask: null,
         conceptIndex: index,
@@ -172,6 +184,9 @@ export function useSpritePool(): SpritePool {
       card.imageSprite.texture = Texture.EMPTY
       card.imageSprite.visible = false
       card.imageSprite.mask = null
+    }
+    if (card.background) {
+      card.background.visible = false
     }
     card.currentTextureUrl = null
     card.hasThumb = false
