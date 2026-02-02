@@ -73,7 +73,9 @@ export function CanvasControls({
           break
         case 'Escape':
           setMode('zoom')
+          onSearchChange('')
           onSearchModeChange(false)
+          onCategoryChange(null)
           setIsInfoOpen(false)
           break
       }
@@ -81,14 +83,17 @@ export function CanvasControls({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onRandomConcept, onSearchChange, onSearchModeChange])
+  }, [onRandomConcept, onSearchChange, onSearchModeChange, onCategoryChange])
 
   const toggleMode = (targetMode: ControlMode) => {
     if (mode === targetMode) {
+      // Toggling off - reset everything
       setMode('zoom')
       if (targetMode === 'search') {
         onSearchChange('')
         onSearchModeChange(false)
+      } else if (targetMode === 'filter') {
+        onCategoryChange(null)
       }
     } else {
       setMode(targetMode)
