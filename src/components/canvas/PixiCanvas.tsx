@@ -52,6 +52,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const lastZoomPercentRef = useRef<number>(-1)
     const zoomThrottleRef = useRef<number>(0)
     const tickRef = useRef<() => void>(() => {})
+    const canClickRef = useRef(false) // Prevent accidental clicks on page load
 
     // Memoize gridConfig to prevent useViewport from resetting on every render
     const gridConfig = useMemo(() => computeGridConfig(concepts.length), [concepts.length])
@@ -186,6 +187,11 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
             rafRef.current = requestAnimationFrame(() => tickRef.current())
           }
         }, 0)
+
+        // Enable clicks after a delay to prevent accidental clicks on page load
+        setTimeout(() => {
+          canClickRef.current = true
+        }, 400)
       }
 
       initApp()
@@ -267,7 +273,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
           isDraggingRef.current = false
           viewport.onDragEnd()
 
-          if (!hasDraggedRef.current) {
+          // Only allow clicks after delay (prevents accidental clicks on page load)
+          if (!hasDraggedRef.current && canClickRef.current) {
             const rect = container.getBoundingClientRect()
             const x = e.clientX - rect.left
             const y = e.clientY - rect.top

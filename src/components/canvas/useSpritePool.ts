@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useCallback } from 'react'
-import { Container, Sprite, Texture, Application } from 'pixi.js'
+import { Container, Sprite, Texture, Graphics, Application } from 'pixi.js'
 import type { TextureLoader } from './useTextureLoader'
 import type { Concept } from '@/lib/types'
 import {
@@ -16,12 +16,15 @@ import {
   CARD_SIZE,
   CELL_SIZE,
   LOD,
+  MIN_ZOOM,
+  MAX_ZOOM,
 } from './canvas-utils'
 
 interface PooledCard {
   key: string
   container: Container
   imageSprite: Sprite | null
+  mask: Graphics | null              // Rounded corner mask
   conceptIndex: number
   // Two-tier image tracking: thumb first, then mid when zoomed in
   currentTextureUrl: string | null  // Currently displayed texture
@@ -38,11 +41,20 @@ interface PooledCard {
   targetScale: number
   // Image fade-in state
   imageAlpha: number
+  // Mask state
+  lastMaskRadius: number
 }
 
 // Animation config
 const LERP_SPEED = 0.12 // How fast cards animate (0-1, higher = faster)
 const CLUSTER_CARD_SCALE = 1.0 // Scale of cards in cluster
+const MAX_BORDER_RADIUS = 2 // Max border radius when fully zoomed in
+
+// Calculate border radius based on zoom (0 at min zoom, MAX_BORDER_RADIUS at max zoom)
+function getBorderRadius(zoom: number): number {
+  const t = (zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)
+  return Math.max(0, Math.min(MAX_BORDER_RADIUS, t * MAX_BORDER_RADIUS))
+}
 
 export interface SpritePool {
   init: (app: Application) => void
@@ -118,6 +130,7 @@ export function useSpritePool(): SpritePool {
       card.currentTextureUrl = null
       card.hasThumb = false
       card.hasMid = false
+      card.lastMaskRadius = -1
     } else {
       const container = new Container()
 
@@ -125,6 +138,7 @@ export function useSpritePool(): SpritePool {
         key,
         container,
         imageSprite: null,
+        mask: null,
         conceptIndex: index,
         currentTextureUrl: null,
         hasThumb: false,
@@ -138,6 +152,7 @@ export function useSpritePool(): SpritePool {
         currentScale: 1,
         targetScale: 1,
         imageAlpha: 0,
+        lastMaskRadius: -1,
       }
 
       getContainer().addChild(container)
@@ -157,10 +172,12 @@ export function useSpritePool(): SpritePool {
     if (card.imageSprite) {
       card.imageSprite.texture = Texture.EMPTY
       card.imageSprite.visible = false
+      card.imageSprite.mask = null
     }
     card.currentTextureUrl = null
     card.hasThumb = false
     card.hasMid = false
+    card.lastMaskRadius = -1
 
     recyclePoolRef.current.push(card)
   }, [])
@@ -441,6 +458,29 @@ export function useSpritePool(): SpritePool {
           card.imageSprite.alpha = card.imageAlpha
           card.imageSprite.visible = true
 
+          // Update rounded corner mask based on zoom
+          const borderRadius = getBorderRadius(viewport.zoom)
+          if (borderRadius > 0.1) {
+            // Only create/update mask if radius is noticeable
+            if (!card.mask) {
+              card.mask = new Graphics()
+              card.container.addChild(card.mask)
+            }
+            // Only redraw if radius changed significantly
+            if (Math.abs(borderRadius - card.lastMaskRadius) > 0.1) {
+              card.mask.clear()
+              card.mask.roundRect(0, 0, CARD_SIZE, CARD_SIZE, borderRadius)
+              card.mask.fill({ color: 0xffffff })
+              card.lastMaskRadius = borderRadius
+            }
+            card.imageSprite.mask = card.mask
+          } else {
+            // No border radius needed
+            if (card.imageSprite.mask) {
+              card.imageSprite.mask = null
+            }
+          }
+
           // Check if image is still animating
           if (card.imageAlpha < 0.99) {
             isAnimating = true
@@ -448,6 +488,7 @@ export function useSpritePool(): SpritePool {
         } else {
           if (card.imageSprite) {
             card.imageSprite.visible = false
+            card.imageSprite.mask = null
           }
         }
 
