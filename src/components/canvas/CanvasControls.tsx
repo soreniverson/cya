@@ -66,7 +66,9 @@ export function CanvasControls({
   const toggleMode = (targetMode: ControlMode) => {
     if (mode === targetMode) {
       setMode('zoom')
-      onCategoryChange(null)
+      if (targetMode === 'filter') {
+        onCategoryChange(null)
+      }
     } else {
       setMode(targetMode)
     }
@@ -194,7 +196,9 @@ export function CanvasControls({
                   <FilterPill
                     key={cat.category}
                     active={selectedCategory === cat.category}
-                    onClick={() => onCategoryChange(cat.category)}
+                    onClick={() => onCategoryChange(
+                      selectedCategory === cat.category ? null : cat.category
+                    )}
                   >
                     {cat.category}
                   </FilterPill>
