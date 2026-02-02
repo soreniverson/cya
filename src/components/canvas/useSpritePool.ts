@@ -14,7 +14,6 @@ import {
   getCardWorldPosition,
   CARD_SIZE,
   CELL_SIZE,
-  LOD,
 } from './canvas-utils'
 
 interface PooledCard {
@@ -217,7 +216,7 @@ export function useSpritePool(): SpritePool {
     const isFiltering = filteredIndices.size < totalConcepts
     const lod = getLODLevel(viewport.zoom)
     const showImages = lod !== 'placeholder'
-    const useThumb = viewport.zoom < LOD.SHOW_DATE
+    // Always use thumbnails in canvas - full images only in lightbox
 
     // Only recalculate cluster layout when needed (signature changed or mode changed)
     const currentSignature = isClusterMode ? getFilterSignature(filteredIndices) : ''
@@ -366,9 +365,8 @@ export function useSpritePool(): SpritePool {
       // Handle image sprite
       const shouldShowImage = showImages && card.currentAlpha > 0.1 && concept
       if (shouldShowImage) {
-        const imageUrl = useThumb
-          ? getImageUrl(concept.image_url, concept.thumbnail_url, 'thumb')
-          : concept.image_url
+        // Always use thumbnail in canvas (full image only loads in lightbox)
+        const imageUrl = getImageUrl(concept.image_url, concept.thumbnail_url, 'thumb')
 
         const texture = textureLoader.getTexture(imageUrl)
 

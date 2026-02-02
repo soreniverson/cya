@@ -20,16 +20,19 @@ export const LOD = {
 } as const
 
 // Momentum physics
-export const FRICTION = 0.96 // Higher = more momentum (smoother glide)
-export const VELOCITY_STOP_THRESHOLD = 0.1 // Lower = smoother stop
-export const DRAG_SAMPLE_WINDOW_MS = 80 // Shorter = more responsive
+export const FRICTION = 0.92 // Smooth, controlled glide
+export const VELOCITY_STOP_THRESHOLD = 0.05 // Lower = smoother stop
+export const DRAG_SAMPLE_WINDOW_MS = 100 // Sample window for velocity calculation
+
+// Smooth zoom
+export const ZOOM_LERP_SPEED = 0.15 // How fast zoom animates (0-1)
 
 // Animation
 export const SHUFFLE_DURATION = 600
 export const RECENTER_DURATION = 500
 
 // Image loading
-export const MAX_CONCURRENT_LOADS = 12 // Browser can handle ~6 per domain, we have CDN
+export const MAX_CONCURRENT_LOADS = 6 // Keep low for smooth scrolling
 
 // Theme colors
 export const COLORS = {
@@ -269,10 +272,14 @@ function normalizeToTile(value: number, tileSize: number): number {
   return mod
 }
 
+// Max cards to render at once (prevents performance issues at low zoom)
+const MAX_VISIBLE_CARDS = 100
+
 /**
  * Get all visible cards for the current viewport
  * Infinite tiling - grid repeats seamlessly in all directions
  * Empty grid cells (beyond concept count) render as placeholders
+ * Capped at MAX_VISIBLE_CARDS, sorted by distance from center
  */
 export function getVisibleCards(
   viewport: Viewport,
@@ -353,6 +360,12 @@ export function getVisibleCards(
         }
       }
     }
+  }
+
+  // If we have more than MAX_VISIBLE_CARDS, keep only the nearest ones
+  if (visible.length > MAX_VISIBLE_CARDS) {
+    visible.sort((a, b) => a.distanceFromCenter - b.distanceFromCenter)
+    return visible.slice(0, MAX_VISIBLE_CARDS)
   }
 
   return visible
