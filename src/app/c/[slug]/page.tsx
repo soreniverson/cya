@@ -118,8 +118,8 @@ export default async function ConceptPage({ params, searchParams }: ConceptPageP
               src={concept.mid_url || concept.image_url}
               alt={concept.title}
               fill
-              sizes="(max-width: 1024px) 100vw, 800px"
               className="object-contain"
+              unoptimized
               priority
             />
           </div>

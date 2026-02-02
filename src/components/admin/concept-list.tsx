@@ -167,8 +167,8 @@ export function AdminConceptList({ concepts, categories }: AdminConceptListProps
                       src={concept.thumbnail_url || concept.image_url}
                       alt={concept.title}
                       fill
-                      sizes="48px"
                       className="object-cover"
+                      unoptimized
                     />
                   </div>
                 </td>

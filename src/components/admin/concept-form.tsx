@@ -163,6 +163,7 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
               alt="Preview"
               fill
               className="object-contain"
+              unoptimized
             />
             <button
               type="button"

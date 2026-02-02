@@ -29,8 +29,8 @@ export function ConceptCard({ concept, priority = false }: ConceptCardProps) {
           src={concept.thumbnail_url || concept.image_url}
           alt={concept.title}
           fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
           className="object-cover transition-transform duration-150 group-hover:scale-[1.02]"
+          unoptimized
           priority={priority}
         />
       </div>

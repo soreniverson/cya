@@ -71,7 +71,7 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
                 alt={concept.title}
                 fill
                 className="object-contain"
-                sizes="(max-width: 448px) 100vw, 448px"
+                unoptimized
                 priority
               />
             </div>
