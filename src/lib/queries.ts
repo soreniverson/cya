@@ -159,3 +159,20 @@ export async function getTotalCount(): Promise<number> {
 
   return count ?? 0
 }
+
+export async function getAllConcepts(): Promise<Concept[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('concepts')
+    .select('*')
+    .eq('is_published', true)
+    .order('date_posted', { ascending: false, nullsFirst: false })
+
+  if (error) {
+    console.error('Error fetching all concepts:', error)
+    return []
+  }
+
+  return data as Concept[]
+}
