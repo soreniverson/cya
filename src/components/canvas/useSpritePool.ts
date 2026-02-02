@@ -486,29 +486,8 @@ export function useSpritePool(): SpritePool {
           card.imageSprite.alpha = card.imageAlpha
           card.imageSprite.visible = true
 
-          // Update rounded corner mask based on zoom
-          const borderRadius = getBorderRadius(viewport.zoom)
-          if (borderRadius > 0.1) {
-            // Only create/update mask if radius is noticeable
-            if (!card.mask) {
-              card.mask = new Graphics()
-              card.mask.renderable = false // Don't render mask itself, only use as mask
-              card.container.addChild(card.mask)
-            }
-            // Only redraw if radius changed significantly
-            if (Math.abs(borderRadius - card.lastMaskRadius) > 0.1) {
-              card.mask.clear()
-              card.mask.roundRect(0, 0, CARD_SIZE, CARD_SIZE, borderRadius)
-              card.mask.fill({ color: 0xffffff })
-              card.lastMaskRadius = borderRadius
-            }
-            card.imageSprite.mask = card.mask
-          } else {
-            // No border radius needed
-            if (card.imageSprite.mask) {
-              card.imageSprite.mask = null
-            }
-          }
+          // Note: Rounded corner masks removed due to rendering issues on mobile
+          // The mask Graphics was causing white boxes and glitches
 
           // Check if image is still animating
           if (card.imageAlpha < 0.99) {
