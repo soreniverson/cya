@@ -16,7 +16,14 @@ export const LOD = {
   PLACEHOLDER_ONLY: 0.15,    // Below this: colored rectangles only
   SHOW_IMAGES: 0.15,         // Above this: load and show thumbnails
   SHOW_TITLE: 0.35,          // Above this: show title text
-  SHOW_DATE: 0.5,            // Above this: show date text
+  SHOW_DATE: 0.5,            // Above this: show date text AND load mid-res images
+  LOAD_MID_RES: 0.5,         // Above this: also request mid-res images
+} as const
+
+// Visible card limits (scales with zoom to keep GPU load constant)
+export const VISIBLE_CARDS = {
+  MAX_ZOOMED_OUT: 500,       // At minimum zoom: many small thumbs
+  MAX_ZOOMED_IN: 50,         // At maximum zoom: fewer large mid-res images
 } as const
 
 // Momentum physics
@@ -98,19 +105,29 @@ function hslToHex(h: number, s: number, l: number): number {
 }
 
 /**
- * Get the best image URL for the current zoom level
- * Prefers pre-generated thumbnails, falls back to original
+ * Get the appropriate image URL for canvas rendering
+ * Two-tier system: thumb (300px) for zoomed out, mid (800px) for zoomed in
+ * Never returns full-res URL - that's only for lightbox/detail page
  */
-export function getImageUrl(
-  imageUrl: string,
-  thumbnailUrl: string | null | undefined,
-  size: 'thumb' | 'full'
-): string {
-  // Use pre-generated thumbnail if available
-  if (size === 'thumb' && thumbnailUrl) {
-    return thumbnailUrl
-  }
-  return imageUrl
+export function getThumbUrl(concept: Concept): string {
+  return concept.thumbnail_url || concept.image_url
+}
+
+export function getMidUrl(concept: Concept): string {
+  return concept.mid_url || concept.thumbnail_url || concept.image_url
+}
+
+/**
+ * Calculate max visible cards based on zoom level
+ * More cards when zoomed out (small thumbs), fewer when zoomed in (larger mid-res)
+ */
+export function getMaxVisibleCards(zoom: number): number {
+  const t = (zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)
+  const clamped = Math.max(0, Math.min(1, t))
+  return Math.round(
+    VISIBLE_CARDS.MAX_ZOOMED_OUT +
+    (VISIBLE_CARDS.MAX_ZOOMED_IN - VISIBLE_CARDS.MAX_ZOOMED_OUT) * clamped
+  )
 }
 
 export interface GridConfig {
@@ -272,14 +289,11 @@ function normalizeToTile(value: number, tileSize: number): number {
   return mod
 }
 
-// Max cards to render at once (prevents performance issues at low zoom)
-const MAX_VISIBLE_CARDS = 500
-
 /**
  * Get all visible cards for the current viewport
  * Infinite tiling - grid repeats seamlessly in all directions
  * Empty grid cells (beyond concept count) render as placeholders
- * Capped at MAX_VISIBLE_CARDS, sorted by distance from center
+ * Card cap scales with zoom: more cards zoomed out, fewer zoomed in
  */
 export function getVisibleCards(
   viewport: Viewport,
@@ -362,10 +376,11 @@ export function getVisibleCards(
     }
   }
 
-  // If we have more than MAX_VISIBLE_CARDS, keep only the nearest ones
-  if (visible.length > MAX_VISIBLE_CARDS) {
+  // Dynamic cap: more cards zoomed out, fewer zoomed in
+  const maxCards = getMaxVisibleCards(viewport.zoom)
+  if (visible.length > maxCards) {
     visible.sort((a, b) => a.distanceFromCenter - b.distanceFromCenter)
-    return visible.slice(0, MAX_VISIBLE_CARDS)
+    return visible.slice(0, maxCards)
   }
 
   return visible

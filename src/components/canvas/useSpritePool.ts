@@ -10,10 +10,12 @@ import {
   type GridConfig,
   getCardKey,
   getLODLevel,
-  getImageUrl,
+  getThumbUrl,
+  getMidUrl,
   getCardWorldPosition,
   CARD_SIZE,
   CELL_SIZE,
+  LOD,
 } from './canvas-utils'
 
 interface PooledCard {
@@ -21,7 +23,10 @@ interface PooledCard {
   container: Container
   imageSprite: Sprite | null
   conceptIndex: number
-  lastTextureUrl: string | null
+  // Two-tier image tracking: thumb first, then mid when zoomed in
+  currentTextureUrl: string | null  // Currently displayed texture
+  hasThumb: boolean                  // Has thumb loaded
+  hasMid: boolean                    // Has mid-res loaded (never downgrade from this)
   // Animation state
   currentX: number
   currentY: number
@@ -110,6 +115,9 @@ export function useSpritePool(): SpritePool {
       card.currentScale = 1
       card.targetScale = 1
       card.imageAlpha = 0
+      card.currentTextureUrl = null
+      card.hasThumb = false
+      card.hasMid = false
     } else {
       const container = new Container()
 
@@ -118,7 +126,9 @@ export function useSpritePool(): SpritePool {
         container,
         imageSprite: null,
         conceptIndex: index,
-        lastTextureUrl: null,
+        currentTextureUrl: null,
+        hasThumb: false,
+        hasMid: false,
         currentX: x,
         currentY: y,
         targetX: x,
@@ -148,7 +158,9 @@ export function useSpritePool(): SpritePool {
       card.imageSprite.texture = Texture.EMPTY
       card.imageSprite.visible = false
     }
-    card.lastTextureUrl = null
+    card.currentTextureUrl = null
+    card.hasThumb = false
+    card.hasMid = false
 
     recyclePoolRef.current.push(card)
   }, [])
@@ -216,7 +228,6 @@ export function useSpritePool(): SpritePool {
     const isFiltering = filteredIndices.size < totalConcepts
     const lod = getLODLevel(viewport.zoom)
     const showImages = lod !== 'placeholder'
-    // Always use thumbnails in canvas - full images only in lightbox
 
     // Only recalculate cluster layout when needed (signature changed or mode changed)
     const currentSignature = isClusterMode ? getFilterSignature(filteredIndices) : ''
@@ -362,26 +373,50 @@ export function useSpritePool(): SpritePool {
       card.container.alpha = card.currentAlpha
       card.container.scale.set(card.currentScale)
 
-      // Handle image sprite
+      // Handle image sprite with two-tier loading
+      // Rule: Always load thumb first, then mid when zoomed in. Never downgrade.
       const shouldShowImage = showImages && card.currentAlpha > 0.1 && concept
       if (shouldShowImage) {
-        // Always use thumbnail in canvas (full image only loads in lightbox)
-        const imageUrl = getImageUrl(concept.image_url, concept.thumbnail_url, 'thumb')
+        const thumbUrl = getThumbUrl(concept)
+        const midUrl = getMidUrl(concept)
+        const wantMid = viewport.zoom >= LOD.LOAD_MID_RES
 
-        const texture = textureLoader.getTexture(imageUrl)
+        // Check what textures we have available
+        const thumbTexture = textureLoader.getTexture(thumbUrl)
+        const midTexture = wantMid ? textureLoader.getTexture(midUrl) : null
 
-        if (texture) {
+        // Determine which texture to display (never downgrade from mid)
+        let textureToUse: Texture | null = null
+        let urlToUse: string | null = null
+
+        if (card.hasMid && midTexture) {
+          // Already showing mid, keep it
+          textureToUse = midTexture
+          urlToUse = midUrl
+        } else if (midTexture) {
+          // Mid just loaded, upgrade to it
+          textureToUse = midTexture
+          urlToUse = midUrl
+          card.hasMid = true
+        } else if (thumbTexture) {
+          // Use thumb (either as fallback or primary)
+          textureToUse = thumbTexture
+          urlToUse = thumbUrl
+          card.hasThumb = true
+        }
+
+        if (textureToUse && urlToUse) {
           if (!card.imageSprite) {
             card.imageSprite = new Sprite()
             card.container.addChild(card.imageSprite)
           }
 
-          const isNewTexture = card.lastTextureUrl !== imageUrl
+          const isNewTexture = card.currentTextureUrl !== urlToUse
           if (isNewTexture) {
-            card.imageSprite.texture = texture
+            card.imageSprite.texture = textureToUse
 
             // Cover fit
-            const imgAspect = texture.width / texture.height
+            const imgAspect = textureToUse.width / textureToUse.height
             if (imgAspect > 1) {
               card.imageSprite.height = CARD_SIZE
               card.imageSprite.width = CARD_SIZE * imgAspect
@@ -394,9 +429,11 @@ export function useSpritePool(): SpritePool {
               card.imageSprite.y = -(card.imageSprite.height - CARD_SIZE) / 2
             }
 
-            card.lastTextureUrl = imageUrl
-            // Reset fade-in animation for new texture
-            card.imageAlpha = 0
+            card.currentTextureUrl = urlToUse
+            // Only reset fade if this is the first image (not an upgrade)
+            if (!card.hasThumb || urlToUse === thumbUrl) {
+              card.imageAlpha = 0
+            }
           }
 
           // Animate image fade-in
@@ -412,7 +449,16 @@ export function useSpritePool(): SpritePool {
           if (card.imageSprite) {
             card.imageSprite.visible = false
           }
-          textureLoader.requestLoad(imageUrl, distanceFromCenter)
+        }
+
+        // Request loads for images we don't have yet
+        // Always request thumb first (higher priority = lower number)
+        if (!thumbTexture) {
+          textureLoader.requestLoad(thumbUrl, distanceFromCenter)
+        }
+        // Request mid-res when zoomed in (lower priority than thumb)
+        if (wantMid && !midTexture && thumbUrl !== midUrl) {
+          textureLoader.requestLoad(midUrl, distanceFromCenter + 1000000)
         }
       } else {
         if (card.imageSprite) {
