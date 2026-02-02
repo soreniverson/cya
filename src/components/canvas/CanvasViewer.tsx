@@ -54,17 +54,11 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
       }
     })
 
-    // Debug logging
-    if (selectedCategory) {
-      console.log(`Filter: "${selectedCategory}" -> ${indices.size}/${concepts.length} concepts match`)
-    }
-
     return indices
   }, [concepts, debouncedSearchQuery, selectedCategory])
 
-  // Cluster mode: only when actively searching with text (not just category filtering)
-  // Category filtering just dims cards in place - no expensive clustering
-  const isClusterMode = isSearchMode && debouncedSearchQuery.length > 0
+  // Cluster mode: when searching with text OR filtering by category
+  const isClusterMode = (isSearchMode && debouncedSearchQuery.length > 0) || selectedCategory !== null
 
   // Handlers
   const handleCardClick = useCallback((concept: Concept) => {
