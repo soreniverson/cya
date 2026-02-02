@@ -273,7 +273,7 @@ function normalizeToTile(value: number, tileSize: number): number {
 }
 
 // Max cards to render at once (prevents performance issues at low zoom)
-const MAX_VISIBLE_CARDS = 100
+const MAX_VISIBLE_CARDS = 200
 
 /**
  * Get all visible cards for the current viewport
