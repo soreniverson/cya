@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
+import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
 import { Application } from 'pixi.js'
 import type { Concept } from '@/lib/types'
 import { useViewport } from './useViewport'
@@ -53,7 +53,14 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const zoomThrottleRef = useRef<number>(0)
     const tickRef = useRef<() => void>(() => {})
 
-    const gridConfig = computeGridConfig(concepts.length)
+    // Store in refs to avoid recreating callbacks
+    const filteredIndicesRef = useRef(filteredIndices)
+    const isClusterModeRef = useRef(isClusterMode)
+    filteredIndicesRef.current = filteredIndices
+    isClusterModeRef.current = isClusterMode
+
+    // Memoize gridConfig to prevent useViewport from resetting on every render
+    const gridConfig = useMemo(() => computeGridConfig(concepts.length), [concepts.length])
     const viewport = useViewport(gridConfig)
     const textureLoader = useTextureLoader()
     const spritePool = useSpritePool()
@@ -67,6 +74,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     }), [viewport])
 
     // Render function with caching
+    // Uses refs for filteredIndices and isClusterMode to avoid callback recreation
     const render = useCallback((forceRecalc = false): boolean => {
       const app = appRef.current
       if (!app) return false
@@ -84,16 +92,16 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         visibleCardsCache,
         vp,
         textureLoader,
-        filteredIndices,
+        filteredIndicesRef.current,
         hoveredIndexRef.current,
         concepts,
-        isClusterMode,
+        isClusterModeRef.current,
         gridConfig
       )
 
       app.render()
       return stillAnimating
-    }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isClusterMode])
+    }, [viewport, gridConfig, concepts, spritePool, textureLoader])
 
     // Animation loop with throttled zoom callback
     const tick = useCallback(() => {
@@ -359,11 +367,15 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
     }, [viewport, gridConfig, concepts, onCardClick, ensureRunning])
 
-    // Re-render and ensure animation loop when filter/search changes
+    // Re-render when filter/search changes
     useEffect(() => {
-      render(true)
-      ensureRunning()
-    }, [filteredIndices, isClusterMode, render, ensureRunning])
+      // Force recalc and start animation loop
+      lastViewportHash = '' // Invalidate cache
+      if (appRef.current) {
+        render(true)
+        ensureRunning()
+      }
+    }, [filteredIndices, isClusterMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
       <div
