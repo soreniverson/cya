@@ -114,7 +114,9 @@ export function getThumbUrl(concept: Concept): string {
 }
 
 export function getMidUrl(concept: Concept): string {
-  return concept.mid_url || concept.thumbnail_url || concept.image_url
+  // Prefer mid_url if available, otherwise fall back to full-res original
+  // (Temporary: until mid-res images are pre-generated at upload time)
+  return concept.mid_url || concept.image_url
 }
 
 /**
