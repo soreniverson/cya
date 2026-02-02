@@ -492,6 +492,7 @@ export function useSpritePool(): SpritePool {
             // Only create/update mask if radius is noticeable
             if (!card.mask) {
               card.mask = new Graphics()
+              card.mask.renderable = false // Don't render mask itself, only use as mask
               card.container.addChild(card.mask)
             }
             // Only redraw if radius changed significantly
