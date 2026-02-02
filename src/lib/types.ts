@@ -4,6 +4,7 @@ export interface Concept {
   title: string
   caption: string | null
   image_url: string
+  thumbnail_url: string | null
   image_width: number
   image_height: number
   category: string | null

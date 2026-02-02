@@ -31,6 +31,8 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
   const [title, setTitle] = useState(concept?.title ?? '')
   const [caption, setCaption] = useState(concept?.caption ?? '')
   const [category, setCategory] = useState(concept?.category ?? '')
+  const [slug, setSlug] = useState(concept?.slug ?? '')
+  const [useCustomSlug, setUseCustomSlug] = useState(isEditing) // Preserve existing slug when editing
   const [datePosted, setDatePosted] = useState(concept?.date_posted ?? '')
   const [isPublished, setIsPublished] = useState(concept?.is_published ?? true)
   const [imageUrl, setImageUrl] = useState(concept?.image_url ?? '')
@@ -39,6 +41,10 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Auto-generate slug when title/category changes (only if not using custom slug)
+  const autoSlug = generateSlug(category, title)
+  const effectiveSlug = useCustomSlug ? slug : autoSlug
 
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -111,17 +117,14 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
         setUploading(false)
       }
 
-      // Generate slug
-      const slug = generateSlug(category, title)
-
       const conceptData = {
+        slug: effectiveSlug,
         title: title.trim(),
         caption: caption.trim() || null,
         category: category.trim() || null,
         date_posted: datePosted || null,
         is_published: isPublished,
         image_url: finalImageUrl,
-        slug,
       }
 
       if (isEditing) {
@@ -262,15 +265,45 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
         </Label>
       </div>
 
-      {/* Slug Preview */}
-      {title && (
-        <div className="p-3 bg-secondary rounded-md">
-          <p className="text-xs text-muted-foreground mb-1">URL Preview</p>
-          <p className="text-sm font-mono">
-            /c/{generateSlug(category, title)}
-          </p>
+      {/* Slug */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="slug">URL Slug</Label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={useCustomSlug}
+              onChange={(e) => {
+                setUseCustomSlug(e.target.checked)
+                if (!e.target.checked) {
+                  setSlug(autoSlug)
+                }
+              }}
+              className="h-3 w-3 rounded border-border"
+            />
+            <span className="text-muted-foreground">Custom slug</span>
+          </label>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">/c/</span>
+          <Input
+            id="slug"
+            value={effectiveSlug}
+            onChange={(e) => {
+              setUseCustomSlug(true)
+              setSlug(e.target.value)
+            }}
+            placeholder="category/concept-name"
+            className="font-mono text-sm"
+            disabled={!useCustomSlug}
+          />
+        </div>
+        {useCustomSlug && effectiveSlug !== autoSlug && (
+          <p className="text-xs text-muted-foreground">
+            Auto-generated would be: <span className="font-mono">{autoSlug}</span>
+          </p>
+        )}
+      </div>
 
       {/* Error */}
       {error && (

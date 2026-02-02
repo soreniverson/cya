@@ -19,6 +19,13 @@ export default async function AdminPage() {
     .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
 
+  // Get unique categories for autocomplete
+  const categories = [...new Set(
+    (concepts ?? [])
+      .map(c => c.category)
+      .filter((c): c is string => !!c)
+  )].sort()
+
   return (
     <main className="min-h-screen">
       {/* Header */}
@@ -57,7 +64,7 @@ export default async function AdminPage() {
           <p className="text-sm text-muted-foreground mt-1">{count ?? 0} total concepts</p>
         </div>
 
-        <AdminConceptList concepts={concepts ?? []} />
+        <AdminConceptList concepts={concepts ?? []} categories={categories} />
       </div>
     </main>
   )
