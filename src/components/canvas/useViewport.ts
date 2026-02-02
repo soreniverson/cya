@@ -16,6 +16,7 @@ import {
   SHUFFLE_DURATION,
   RECENTER_DURATION,
   DEFAULT_ZOOM,
+  ZOOM_LERP_SPEED,
 } from './canvas-utils'
 
 interface DragSample {
@@ -67,6 +68,8 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
   // Core state (refs for performance - no re-renders)
   const panRef = useRef<Point>(getGridCenter(gridConfig))
   const zoomRef = useRef<number>(DEFAULT_ZOOM)
+  const targetZoomRef = useRef<number>(DEFAULT_ZOOM) // Smooth zoom target
+  const zoomFocusRef = useRef<Point | null>(null) // Where to zoom toward (screen coords)
   const sizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 })
 
   // Momentum state
@@ -159,27 +162,17 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
     dragSamplesRef.current = []
   }, [])
 
-  // Wheel zoom
+  // Wheel zoom (smooth animated)
   const onWheel = useCallback((deltaY: number, screenX: number, screenY: number) => {
     // Cancel any animation
     animationRef.current = null
 
     const factor = deltaY > 0 ? 1 / ZOOM_WHEEL_FACTOR : ZOOM_WHEEL_FACTOR
-    const newZoom = clampZoom(zoomRef.current * factor)
+    // Accumulate on target zoom for smooth feel when scrolling fast
+    const newTargetZoom = clampZoom(targetZoomRef.current * factor)
 
-    // Zoom toward cursor
-    const newPan = zoomTowardPoint(
-      panRef.current,
-      zoomRef.current,
-      newZoom,
-      screenX,
-      screenY,
-      sizeRef.current.width,
-      sizeRef.current.height
-    )
-
-    panRef.current = newPan
-    zoomRef.current = newZoom
+    targetZoomRef.current = newTargetZoom
+    zoomFocusRef.current = { x: screenX, y: screenY }
   }, [])
 
   // Pinch zoom
@@ -216,26 +209,18 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
 
   const onPinchEnd = useCallback(() => {
     isPinchingRef.current = false
+    // Sync target with current to avoid jump when pinch ends
+    targetZoomRef.current = zoomRef.current
   }, [])
 
-  // Zoom from slider (zooms toward center)
+  // Zoom from slider (zooms toward center, smooth animation)
   const setZoom = useCallback((zoom: number) => {
     const newZoom = clampZoom(zoom)
-    const centerX = sizeRef.current.width / 2
-    const centerY = sizeRef.current.height / 2
-
-    const newPan = zoomTowardPoint(
-      panRef.current,
-      zoomRef.current,
-      newZoom,
-      centerX,
-      centerY,
-      sizeRef.current.width,
-      sizeRef.current.height
-    )
-
-    panRef.current = newPan
-    zoomRef.current = newZoom
+    targetZoomRef.current = newZoom
+    zoomFocusRef.current = {
+      x: sizeRef.current.width / 2,
+      y: sizeRef.current.height / 2
+    }
   }, [])
 
   // Animated transitions
@@ -267,7 +252,7 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
   const tick = useCallback((): boolean => {
     let animating = false
 
-    // Handle animated transition
+    // Handle animated transition (shuffle/recenter)
     const anim = animationRef.current
     if (anim) {
       const now = performance.now()
@@ -280,11 +265,44 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
         y: anim.startPan.y + (anim.endPan.y - anim.startPan.y) * ease,
       }
       zoomRef.current = anim.startZoom + (anim.endZoom - anim.startZoom) * ease
+      targetZoomRef.current = zoomRef.current // Keep target in sync
 
       if (t >= 1) {
         animationRef.current = null
       } else {
         animating = true
+      }
+    }
+
+    // Handle smooth zoom (when not in a scripted animation)
+    if (!anim) {
+      const zoomDiff = targetZoomRef.current - zoomRef.current
+      if (Math.abs(zoomDiff) > 0.001) {
+        const newZoom = zoomRef.current + zoomDiff * ZOOM_LERP_SPEED
+
+        // Zoom toward focus point if set, otherwise center
+        const focus = zoomFocusRef.current || {
+          x: sizeRef.current.width / 2,
+          y: sizeRef.current.height / 2
+        }
+
+        const newPan = zoomTowardPoint(
+          panRef.current,
+          zoomRef.current,
+          newZoom,
+          focus.x,
+          focus.y,
+          sizeRef.current.width,
+          sizeRef.current.height
+        )
+
+        panRef.current = newPan
+        zoomRef.current = newZoom
+        animating = true
+      } else if (zoomFocusRef.current) {
+        // Snap to target and clear focus
+        zoomRef.current = targetZoomRef.current
+        zoomFocusRef.current = null
       }
     }
 
@@ -310,7 +328,8 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
   const isIdle = useCallback((): boolean => {
     const vel = velocityRef.current
     const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y)
-    return !isDraggingRef.current && !isPinchingRef.current && !animationRef.current && speed <= VELOCITY_STOP_THRESHOLD
+    const zoomDiff = Math.abs(targetZoomRef.current - zoomRef.current)
+    return !isDraggingRef.current && !isPinchingRef.current && !animationRef.current && speed <= VELOCITY_STOP_THRESHOLD && zoomDiff < 0.001
   }, [])
 
   return {

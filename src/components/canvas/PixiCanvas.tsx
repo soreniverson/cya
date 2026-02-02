@@ -36,8 +36,9 @@ let visibleCardsCache: VisibleCard[] = []
 let lastViewportHash = ''
 
 function getViewportHash(vp: Viewport): string {
-  // Round to reduce unnecessary recalculations
-  return `${Math.round(vp.pan.x)},${Math.round(vp.pan.y)},${vp.zoom.toFixed(3)},${vp.width},${vp.height}`
+  // Round more aggressively to reduce visible cards recalculations
+  // Only recalc when moved by ~10px or zoom changed by ~2%
+  return `${Math.round(vp.pan.x / 10) * 10},${Math.round(vp.pan.y / 10) * 10},${(Math.round(vp.zoom * 50) / 50).toFixed(2)},${vp.width},${vp.height}`
 }
 
 export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
@@ -101,9 +102,9 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       const viewportAnimating = viewport.tick()
       const spritesAnimating = render()
 
-      // Throttle zoom change callbacks (every 100ms max)
+      // Throttle zoom change callbacks (every 50ms max for smoother slider)
       const now = Date.now()
-      if (onZoomChange && now - zoomThrottleRef.current > 100) {
+      if (onZoomChange && now - zoomThrottleRef.current > 50) {
         const newPercent = zoomToPercent(viewport.getViewport().zoom)
         if (newPercent !== lastZoomPercentRef.current) {
           lastZoomPercentRef.current = newPercent
@@ -113,7 +114,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
 
       // Keep running while animating, dragging, sprites animating, OR images loading
-      if (viewportAnimating || isDraggingRef.current || spritesAnimating || textureLoader.hasPendingLoads()) {
+      const hasPending = textureLoader.hasPendingLoads()
+      if (viewportAnimating || isDraggingRef.current || spritesAnimating || hasPending) {
         rafRef.current = requestAnimationFrame(tick)
       } else {
         isRunningRef.current = false

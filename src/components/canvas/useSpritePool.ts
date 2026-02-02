@@ -37,7 +37,7 @@ interface PooledCard {
 }
 
 // Animation config
-const LERP_SPEED = 0.12 // How fast cards animate (0-1, higher = faster)
+const LERP_SPEED = 0.1 // How fast cards animate (0-1, lower = smoother)
 const CLUSTER_CARD_SCALE = 1.0 // Scale of cards in cluster
 
 export interface SpritePool {

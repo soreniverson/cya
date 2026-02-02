@@ -50,20 +50,19 @@ export function useTextureLoader(): TextureLoader {
 
     if (loadQueueMap.current.size === 0) return
 
-    // Convert to array and sort only when we need to process
-    // Only sort every 10 frames to reduce overhead
-    let toProcess: Array<[string, number]> | null = null
-    if (frameCount.current % 10 === 0 || activeLoads.current < MAX_CONCURRENT_LOADS) {
-      toProcess = Array.from(loadQueueMap.current.entries())
-      toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority
+    // Only sort and process every 15 frames to reduce overhead during fast movement
+    if (frameCount.current % 15 !== 0 && activeLoads.current >= MAX_CONCURRENT_LOADS / 2) {
+      return
     }
 
-    if (!toProcess) return
+    // Convert to array and sort by priority
+    const toProcess = Array.from(loadQueueMap.current.entries())
+    toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority (lower = higher priority)
 
-    // Process up to max concurrent loads
+    // Process up to 4 per frame to avoid stutter
     let processed = 0
     for (const [url, _priority] of toProcess) {
-      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 6) break
+      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 4) break
 
       if (textureCache.current.has(url) || loadingSet.current.has(url)) {
         loadQueueMap.current.delete(url)

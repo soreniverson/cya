@@ -465,13 +465,24 @@ function FilterPill({
     <button
       onClick={onClick}
       className={cn(
-        "px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-150",
-        active
-          ? "bg-white/15 text-white"
-          : "text-neutral-400 hover:text-white hover:bg-white/5"
+        "group relative px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors duration-150 overflow-hidden",
+        active ? "text-white" : "text-neutral-400 hover:text-white"
       )}
     >
-      {children}
+      {/* Active background */}
+      <span
+        className={cn(
+          "absolute inset-0 bg-white/15 rounded-full transition-transform duration-200 ease-out",
+          active ? "scale-100" : "scale-0"
+        )}
+      />
+      {/* Hover background - slides from left */}
+      {!active && (
+        <span
+          className="absolute inset-0 bg-white/5 rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-200 ease-out origin-left"
+        />
+      )}
+      <span className="relative z-10">{children}</span>
     </button>
   )
 }
