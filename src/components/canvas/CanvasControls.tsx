@@ -1,49 +1,35 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Search, X, Dices, Info, SlidersHorizontal } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Dices, Info, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Category } from '@/lib/types'
 
-type ControlMode = 'zoom' | 'search' | 'filter'
+type ControlMode = 'zoom' | 'filter'
 
 interface CanvasControlsProps {
-  searchQuery: string
-  onSearchChange: (query: string) => void
   selectedCategory: string | null
   onCategoryChange: (category: string | null) => void
   categories: Category[]
   zoomPercent: number
   onZoomChange: (percent: number) => void
   onRandomConcept: () => void
-  onSearchModeChange: (isSearching: boolean) => void
   filteredCount: number
   totalCount: number
 }
 
 export function CanvasControls({
-  searchQuery,
-  onSearchChange,
   selectedCategory,
   onCategoryChange,
   categories,
   zoomPercent,
   onZoomChange,
   onRandomConcept,
-  onSearchModeChange,
   filteredCount,
   totalCount,
 }: CanvasControlsProps) {
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<ControlMode>('zoom')
   const [isInfoOpen, setIsInfoOpen] = useState(false)
-
-  // Focus search input when entering search mode
-  useEffect(() => {
-    if (mode === 'search') {
-      setTimeout(() => searchInputRef.current?.focus(), 150)
-    }
-  }, [mode])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -52,29 +38,16 @@ export function CanvasControls({
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
       ) {
-        if (e.key === 'Escape') {
-          setMode('zoom')
-          onSearchChange('')
-          onSearchModeChange(false)
-          ;(e.target as HTMLElement).blur()
-        }
         return
       }
 
       switch (e.key) {
-        case '/':
-          e.preventDefault()
-          setMode('search')
-          onSearchModeChange(true)
-          break
         case 'r':
         case 'R':
           onRandomConcept()
           break
         case 'Escape':
           setMode('zoom')
-          onSearchChange('')
-          onSearchModeChange(false)
           onCategoryChange(null)
           setIsInfoOpen(false)
           break
@@ -83,21 +56,16 @@ export function CanvasControls({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onRandomConcept, onSearchChange, onSearchModeChange, onCategoryChange])
+  }, [onRandomConcept, onCategoryChange])
 
   const toggleMode = (targetMode: ControlMode) => {
     if (mode === targetMode) {
-      // Toggling off - reset everything
       setMode('zoom')
-      if (targetMode === 'search') {
-        onSearchChange('')
-        onSearchModeChange(false)
-      } else if (targetMode === 'filter') {
+      if (targetMode === 'filter') {
         onCategoryChange(null)
       }
     } else {
       setMode(targetMode)
-      onSearchModeChange(targetMode === 'search')
     }
   }
 
@@ -111,22 +79,16 @@ export function CanvasControls({
 
       {/* Bottom controls bar */}
       <div className="fixed bottom-0 left-0 right-0 sm:bottom-6 sm:left-6 sm:right-6 z-10 pointer-events-none">
-        {/* Mobile layout: 4 buttons or expanded control */}
+        {/* Mobile layout: 3 buttons or expanded control */}
         <div className="flex items-center justify-center gap-3 py-3 px-4 pb-[max(12px,env(safe-area-inset-bottom))] sm:hidden pointer-events-auto">
           {mode === 'zoom' ? (
-            // Default: 4 buttons in a row
+            // Default: 3 buttons in a row
             <>
               <ControlButton
                 onClick={() => toggleMode('filter')}
                 title="Filter by category"
               >
                 <SlidersHorizontal className="size-[18px]" />
-              </ControlButton>
-              <ControlButton
-                onClick={() => toggleMode('search')}
-                title="Search"
-              >
-                <Search className="size-[18px]" />
               </ControlButton>
               <ControlButton
                 onClick={() => setIsInfoOpen(true)}
@@ -141,23 +103,6 @@ export function CanvasControls({
                 <Dices className="size-[18px]" />
               </ControlButton>
             </>
-          ) : mode === 'search' ? (
-            // Search mode: search input with close button
-            <div className="flex items-center gap-2 w-full max-w-sm">
-              <div className="control-surface px-4 h-11 flex items-center flex-1">
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Search concepts..."
-                  value={searchQuery}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  className="w-full bg-transparent text-sm text-center text-white placeholder:text-neutral-500 focus:outline-none"
-                />
-              </div>
-              <ControlButton onClick={() => toggleMode('search')}>
-                <X className="size-[18px]" />
-              </ControlButton>
-            </div>
           ) : (
             // Filter mode: filter pills with close button
             <div className="flex items-center gap-2 w-full">
@@ -189,7 +134,7 @@ export function CanvasControls({
 
         {/* Desktop layout: original 3-column layout */}
         <div className="hidden sm:flex items-center justify-between gap-3">
-          {/* Left side - Filter and Search buttons */}
+          {/* Left side - Filter button */}
           <div className="flex gap-2 pointer-events-auto">
             <ControlButton
               active={mode === 'filter'}
@@ -197,26 +142,6 @@ export function CanvasControls({
               title="Filter by category"
             >
               <SlidersHorizontal className="size-[18px]" />
-            </ControlButton>
-            <ControlButton
-              active={mode === 'search'}
-              onClick={() => toggleMode('search')}
-              title="Search (press /)"
-            >
-              <div className="relative size-[18px]">
-                <Search
-                  className={cn(
-                    "size-[18px] absolute inset-0 transition-all duration-150",
-                    mode === 'search' ? "opacity-0 rotate-90 scale-75" : "opacity-100 rotate-0 scale-100"
-                  )}
-                />
-                <X
-                  className={cn(
-                    "size-[18px] absolute inset-0 transition-all duration-150",
-                    mode === 'search' ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-75"
-                  )}
-                />
-              </div>
             </ControlButton>
           </div>
 
@@ -239,26 +164,6 @@ export function CanvasControls({
                   value={zoomPercent}
                   onChange={(e) => onZoomChange(Number(e.target.value))}
                   className="zoom-slider w-48"
-                />
-              </div>
-            </div>
-
-            {/* Search input */}
-            <div
-              className={cn(
-                "transition-all duration-150",
-                mode === 'search'
-                  ? "opacity-100 scale-100"
-                  : "opacity-0 scale-95 pointer-events-none absolute"
-              )}
-            >
-              <div className="control-surface px-4 h-11 flex items-center w-96">
-                <input
-                  type="text"
-                  placeholder="Search concepts..."
-                  value={searchQuery}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  className="w-full bg-transparent text-sm text-center text-white placeholder:text-neutral-500 focus:outline-none"
                 />
               </div>
             </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import type { Concept, Category } from '@/lib/types'
 import { PixiCanvas, type PixiCanvasHandle } from './PixiCanvas'
 import { CanvasControls } from './CanvasControls'
@@ -16,18 +16,7 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
   const canvasRef = useRef<PixiCanvasHandle>(null)
 
   // Filter state
-  const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [isSearchMode, setIsSearchMode] = useState(false)
-
-  // Debounce search query (150ms)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-    }, 150)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
 
   // Zoom state (for slider sync)
   const [zoomPercent, setZoomPercent] = useState(zoomToPercent(DEFAULT_ZOOM))
@@ -35,30 +24,24 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
   // Lightbox state
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null)
 
-  // Compute filtered indices (uses debounced search for performance)
+  // Compute filtered indices
   const filteredIndices = useMemo(() => {
     const indices = new Set<number>()
-    const lowerQuery = debouncedSearchQuery.toLowerCase()
 
     concepts.forEach((concept, index) => {
-      const matchesSearch =
-        !debouncedSearchQuery ||
-        concept.title.toLowerCase().includes(lowerQuery) ||
-        concept.caption?.toLowerCase().includes(lowerQuery)
-
       const matchesCategory =
         !selectedCategory || concept.category === selectedCategory
 
-      if (matchesSearch && matchesCategory) {
+      if (matchesCategory) {
         indices.add(index)
       }
     })
 
     return indices
-  }, [concepts, debouncedSearchQuery, selectedCategory])
+  }, [concepts, selectedCategory])
 
-  // Cluster mode: when searching with text OR filtering by category
-  const isClusterMode = (isSearchMode && debouncedSearchQuery.length > 0) || selectedCategory !== null
+  // Cluster mode: when filtering by category
+  const isClusterMode = selectedCategory !== null
 
   // Handlers
   const handleCardClick = useCallback((concept: Concept) => {
@@ -93,15 +76,12 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
 
       {/* DOM Control Layer */}
       <CanvasControls
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
         selectedCategory={selectedCategory}
         onCategoryChange={setSelectedCategory}
         categories={categories}
         zoomPercent={zoomPercent}
         onZoomChange={handleZoomChange}
         onRandomConcept={handleRandomConcept}
-        onSearchModeChange={setIsSearchMode}
         filteredCount={filteredIndices.size}
         totalCount={concepts.length}
       />

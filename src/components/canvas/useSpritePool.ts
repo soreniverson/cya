@@ -452,13 +452,13 @@ export function useSpritePool(): SpritePool {
         }
 
         // Request loads for images we don't have yet
-        // Always request thumb first (higher priority = lower number)
+        // Load thumb and mid in parallel when zoomed in (same priority)
         if (!thumbTexture) {
           textureLoader.requestLoad(thumbUrl, distanceFromCenter)
         }
-        // Request mid-res when zoomed in (lower priority than thumb)
+        // Request mid-res when zoomed in (same priority - load in parallel)
         if (wantMid && !midTexture && thumbUrl !== midUrl) {
-          textureLoader.requestLoad(midUrl, distanceFromCenter + 1000000)
+          textureLoader.requestLoad(midUrl, distanceFromCenter)
         }
       } else {
         if (card.imageSprite) {
