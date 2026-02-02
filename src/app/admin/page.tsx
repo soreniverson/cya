@@ -13,11 +13,11 @@ export default async function AdminPage() {
     redirect('/login')
   }
 
-  // Get all concepts for admin view
+  // Get all concepts for admin view, sorted by post date
   const { data: concepts, count } = await supabase
     .from('concepts')
     .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
+    .order('date_posted', { ascending: false, nullsFirst: false })
 
   // Get unique categories for autocomplete
   const categories = [...new Set(
