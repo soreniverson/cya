@@ -5,12 +5,9 @@ import { Texture, Assets } from 'pixi.js'
 import { getCategoryColor } from './canvas-utils'
 
 // Configuration
-const MAX_TEXTURE_COUNT = 120 // Maximum textures in cache before eviction
-const EVICTION_BATCH_SIZE = 25 // Remove this many when over limit
+const MAX_TEXTURE_COUNT = 150 // Maximum textures in cache before eviction
+const EVICTION_BATCH_SIZE = 30 // Remove this many when over limit
 const MAX_CONCURRENT_LOADS = 6 // Total concurrent loads
-const OFFSCREEN_DISPOSE_DELAY = 3000 // ms before disposing off-screen textures
-
-export type ImageSize = 'thumb' | 'full'
 
 export interface TextureLoader {
   getTexture: (url: string) => Texture | null
@@ -19,8 +16,6 @@ export interface TextureLoader {
   getCategoryColor: (category: string | null) => number
   clearQueue: () => void
   hasPendingLoads: () => boolean
-  markVisible: (url: string) => void
-  markOffscreen: (url: string) => void
 }
 
 interface CacheEntry {
@@ -36,10 +31,6 @@ export function useTextureLoader(): TextureLoader {
   const activeLoads = useRef<number>(0)
   const frameCount = useRef<number>(0)
 
-  // Off-screen disposal tracking
-  const offscreenTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const visibleUrls = useRef<Set<string>>(new Set())
-
   // Evict least recently used textures when cache is too large
   const evictIfNeeded = useCallback(() => {
     const cache = textureCache.current
@@ -49,10 +40,8 @@ export function useTextureLoader(): TextureLoader {
     const entries = Array.from(cache.entries())
     entries.sort((a, b) => a[1].lastUsed - b[1].lastUsed)
 
-    // Don't evict currently visible textures
-    const toEvict = entries
-      .filter(([url]) => !visibleUrls.current.has(url))
-      .slice(0, EVICTION_BATCH_SIZE)
+    // Evict oldest entries
+    const toEvict = entries.slice(0, EVICTION_BATCH_SIZE)
 
     for (const [url, entry] of toEvict) {
       entry.texture.destroy(true)
@@ -144,43 +133,6 @@ export function useTextureLoader(): TextureLoader {
     loadQueueMap.current.set(url, priority)
   }, [])
 
-  // Mark a URL as currently visible (prevents eviction and disposal)
-  const markVisible = useCallback((url: string) => {
-    visibleUrls.current.add(url)
-
-    // Cancel any pending disposal
-    const timer = offscreenTimers.current.get(url)
-    if (timer) {
-      clearTimeout(timer)
-      offscreenTimers.current.delete(url)
-    }
-  }, [])
-
-  // Mark a URL as off-screen (schedules disposal)
-  const markOffscreen = useCallback((url: string) => {
-    visibleUrls.current.delete(url)
-
-    // Don't schedule disposal if already scheduled or not in cache
-    if (offscreenTimers.current.has(url)) return
-    if (!textureCache.current.has(url)) return
-
-    // Schedule disposal after delay
-    const timer = setTimeout(() => {
-      offscreenTimers.current.delete(url)
-
-      // Double-check it's still off-screen
-      if (visibleUrls.current.has(url)) return
-
-      const entry = textureCache.current.get(url)
-      if (entry) {
-        entry.texture.destroy(true)
-        textureCache.current.delete(url)
-      }
-    }, OFFSCREEN_DISPOSE_DELAY)
-
-    offscreenTimers.current.set(url, timer)
-  }, [])
-
   const clearQueue = useCallback(() => {
     loadQueueMap.current.clear()
   }, [])
@@ -196,7 +148,5 @@ export function useTextureLoader(): TextureLoader {
     getCategoryColor,
     clearQueue,
     hasPendingLoads,
-    markVisible,
-    markOffscreen,
   }
 }

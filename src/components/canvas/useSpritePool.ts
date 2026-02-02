@@ -82,8 +82,6 @@ export function useSpritePool(): SpritePool {
   const lastFilterSignatureRef = useRef<string>('')
   const lastClusterCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
-  // Track which URLs are currently visible for off-screen cleanup
-  const previousVisibleUrlsRef = useRef<Set<string>>(new Set())
 
   const getContainer = useCallback((): Container => {
     if (!containerRef.current) {
@@ -141,17 +139,12 @@ export function useSpritePool(): SpritePool {
     return card
   }, [getContainer])
 
-  const releaseCard = useCallback((key: string, textureLoader?: TextureLoader) => {
+  const releaseCard = useCallback((key: string) => {
     const card = activeCardsRef.current.get(key)
     if (!card) return
 
     activeCardsRef.current.delete(key)
     card.container.visible = false
-
-    // Mark the texture as off-screen for potential cleanup
-    if (card.lastTextureUrl && textureLoader) {
-      textureLoader.markOffscreen(card.lastTextureUrl)
-    }
 
     if (card.imageSprite) {
       card.imageSprite.texture = Texture.EMPTY
@@ -247,7 +240,6 @@ export function useSpritePool(): SpritePool {
     lastClusterModeRef.current = isClusterMode
 
     const neededKeys = new Set<string>()
-    const currentVisibleUrls = new Set<string>()
 
     // Build a Set of visible concept indices for O(1) lookup
     const visibleConceptIndices = new Set<number>()
@@ -374,10 +366,6 @@ export function useSpritePool(): SpritePool {
           ? getImageUrl(concept.image_url, concept.thumbnail_url, 'thumb')
           : concept.image_url
 
-        // Track this URL as visible
-        currentVisibleUrls.add(imageUrl)
-        textureLoader.markVisible(imageUrl)
-
         const texture = textureLoader.getTexture(imageUrl)
 
         if (texture) {
@@ -429,14 +417,6 @@ export function useSpritePool(): SpritePool {
       }
     }
 
-    // Mark URLs that are no longer visible as off-screen
-    for (const url of previousVisibleUrlsRef.current) {
-      if (!currentVisibleUrls.has(url)) {
-        textureLoader.markOffscreen(url)
-      }
-    }
-    previousVisibleUrlsRef.current = currentVisibleUrls
-
     // Release cards no longer needed
     for (const [key, card] of activeCardsRef.current) {
       if (!neededKeys.has(key)) {
@@ -449,7 +429,7 @@ export function useSpritePool(): SpritePool {
           card.container.scale.set(card.currentScale)
           isAnimating = true
         } else {
-          releaseCard(key, textureLoader)
+          releaseCard(key)
         }
       }
     }
@@ -479,7 +459,6 @@ export function useSpritePool(): SpritePool {
     clusterLayoutRef.current.clear()
     lastFilterSignatureRef.current = ''
     lastClusterCenterRef.current = { x: 0, y: 0 }
-    previousVisibleUrlsRef.current.clear()
   }, [releaseCard])
 
   return {
