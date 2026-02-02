@@ -26,7 +26,7 @@ export interface PixiCanvasHandle {
 interface PixiCanvasProps {
   concepts: Concept[]
   filteredIndices: Set<number>
-  isSearchMode: boolean
+  isClusterMode: boolean  // true = cluster matching cards in center (text search only)
   onCardClick: (concept: Concept) => void
   onZoomChange?: (percent: number) => void
 }
@@ -41,7 +41,7 @@ function getViewportHash(vp: Viewport): string {
 }
 
 export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
-  function PixiCanvas({ concepts, filteredIndices, isSearchMode, onCardClick, onZoomChange }, ref) {
+  function PixiCanvas({ concepts, filteredIndices, isClusterMode, onCardClick, onZoomChange }, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const appRef = useRef<Application | null>(null)
     const rafRef = useRef<number>(0)
@@ -87,12 +87,13 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         filteredIndices,
         hoveredIndexRef.current,
         concepts,
-        isSearchMode
+        isClusterMode,
+        gridConfig
       )
 
       app.render()
       return stillAnimating
-    }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isSearchMode])
+    }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isClusterMode])
 
     // Animation loop with throttled zoom callback
     const tick = useCallback(() => {
@@ -362,7 +363,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     useEffect(() => {
       render(true)
       ensureRunning()
-    }, [filteredIndices, isSearchMode, render, ensureRunning])
+    }, [filteredIndices, isClusterMode, render, ensureRunning])
 
     return (
       <div

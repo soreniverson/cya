@@ -12,7 +12,6 @@ import {
   getLODLevel,
   getImageUrl,
   getCardWorldPosition,
-  computeGridConfig,
   CARD_SIZE,
   CELL_SIZE,
   LOD,
@@ -50,7 +49,8 @@ export interface SpritePool {
     filteredIndices: Set<number>,
     hoveredIndex: number | null,
     concepts: Concept[],
-    isSearchMode: boolean
+    isClusterMode: boolean,
+    gridConfig: GridConfig
   ) => boolean // Returns true if still animating
   getContainer: () => Container
   cleanup: () => void
@@ -62,13 +62,25 @@ function lerp(current: number, target: number, speed: number): number {
   return current + diff * speed
 }
 
+// Cache signature for cluster layout invalidation
+function getFilterSignature(indices: Set<number>): string {
+  if (indices.size === 0) return ''
+  if (indices.size > 200) return `size:${indices.size}` // For large sets, just use size
+  // For smaller sets, use actual content
+  const arr = Array.from(indices)
+  arr.sort((a, b) => a - b)
+  return arr.join(',')
+}
+
 export function useSpritePool(): SpritePool {
   const appRef = useRef<Application | null>(null)
   const containerRef = useRef<Container | null>(null)
   const activeCardsRef = useRef<Map<string, PooledCard>>(new Map())
   const recyclePoolRef = useRef<PooledCard[]>([])
   const clusterLayoutRef = useRef<Map<number, { x: number; y: number }>>(new Map())
-  const lastSearchModeRef = useRef<boolean>(false)
+  const lastClusterModeRef = useRef<boolean>(false)
+  const lastFilterSignatureRef = useRef<string>('')
+  const lastClusterCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   const getContainer = useCallback((): Container => {
     if (!containerRef.current) {
@@ -190,7 +202,8 @@ export function useSpritePool(): SpritePool {
     filteredIndices: Set<number>,
     hoveredIndex: number | null,
     concepts: Concept[],
-    isSearchMode: boolean
+    isClusterMode: boolean,
+    gridConfig: GridConfig
   ): boolean => {
     const container = getContainer()
     let isAnimating = false
@@ -206,20 +219,35 @@ export function useSpritePool(): SpritePool {
     const showImages = lod !== 'placeholder'
     const useThumb = viewport.zoom < LOD.SHOW_DATE
 
-    // Recalculate cluster layout when in search mode
-    // Always recalculate because filtered indices content may change even if size doesn't
-    if (isSearchMode) {
-      clusterLayoutRef.current = calculateClusterLayout(filteredIndices, viewport, totalConcepts)
-    } else if (!isSearchMode && lastSearchModeRef.current) {
-      // Clear cluster layout when exiting search mode
+    // Only recalculate cluster layout when needed (signature changed or mode changed)
+    const currentSignature = isClusterMode ? getFilterSignature(filteredIndices) : ''
+    const centerMoved = isClusterMode && (
+      Math.abs(viewport.pan.x - lastClusterCenterRef.current.x) > 100 ||
+      Math.abs(viewport.pan.y - lastClusterCenterRef.current.y) > 100
+    )
+
+    if (isClusterMode) {
+      if (currentSignature !== lastFilterSignatureRef.current || !lastClusterModeRef.current || centerMoved) {
+        clusterLayoutRef.current = calculateClusterLayout(filteredIndices, viewport, totalConcepts)
+        lastFilterSignatureRef.current = currentSignature
+        lastClusterCenterRef.current = { x: viewport.pan.x, y: viewport.pan.y }
+      }
+    } else if (!isClusterMode && lastClusterModeRef.current) {
       clusterLayoutRef.current.clear()
+      lastFilterSignatureRef.current = ''
     }
-    lastSearchModeRef.current = isSearchMode
+    lastClusterModeRef.current = isClusterMode
 
     const neededKeys = new Set<string>()
 
-    // In search mode, we need to show ALL filtered cards, not just visible ones
-    // So we'll add the filtered cards to the visible set
+    // Build a Set of visible concept indices for O(1) lookup (FIX: was O(n²))
+    const visibleConceptIndices = new Set<number>()
+    for (const vc of visibleCards) {
+      visibleConceptIndices.add(vc.index % totalConcepts)
+    }
+
+    // In cluster mode, we need to show filtered cards that aren't currently visible
+    // But limit to avoid performance issues (max 150 cards in cluster)
     const cardsToRender = new Map<string, VisibleCard>()
 
     // First add all visible cards from the grid
@@ -228,29 +256,22 @@ export function useSpritePool(): SpritePool {
       cardsToRender.set(key, vc)
     }
 
-    // In search mode, also ensure all filtered cards are rendered
-    if (isSearchMode) {
-      const gridConfig = computeGridConfig(totalConcepts)
+    // In cluster mode, add synthetic cards for filtered indices not visible
+    if (isClusterMode) {
+      let addedCount = 0
+      const maxClusterCards = 150 // Cap to prevent performance issues
 
       for (const conceptIndex of filteredIndices) {
-        // Check if we already have this card visible
-        let found = false
-        for (const vc of visibleCards) {
-          if (vc.index % totalConcepts === conceptIndex) {
-            found = true
-            break
-          }
-        }
+        if (addedCount >= maxClusterCards) break
 
-        // If not visible, create a synthetic visible card for it
-        if (!found) {
+        // O(1) lookup instead of O(n) loop
+        if (!visibleConceptIndices.has(conceptIndex)) {
           const clusterPos = clusterLayoutRef.current.get(conceptIndex)
           if (clusterPos) {
-            // Use grid position as starting point for animation
             const gridPos = getCardWorldPosition(conceptIndex, gridConfig)
-            const key = `search-${conceptIndex}`
+            const key = `cluster-${conceptIndex}`
             cardsToRender.set(key, {
-              concept: null as any, // Will be looked up
+              concept: concepts[conceptIndex],
               index: conceptIndex,
               worldX: gridPos.x,
               worldY: gridPos.y,
@@ -261,6 +282,7 @@ export function useSpritePool(): SpritePool {
               screenSize: 0,
               distanceFromCenter: 0,
             })
+            addedCount++
           }
         }
       }
@@ -268,7 +290,7 @@ export function useSpritePool(): SpritePool {
 
     for (const [cardKey, visibleCard] of cardsToRender) {
       const { index, worldX, worldY, tileX, tileY, distanceFromCenter } = visibleCard
-      const key = cardKey.startsWith('search-') ? cardKey : getCardKey(index, tileX, tileY)
+      const key = cardKey.startsWith('cluster-') ? cardKey : getCardKey(index, tileX, tileY)
       neededKeys.add(key)
 
       const conceptIndex = index % totalConcepts
@@ -281,7 +303,7 @@ export function useSpritePool(): SpritePool {
       let targetAlpha = 1
       let targetScale = 1
 
-      if (isSearchMode) {
+      if (isClusterMode) {
         if (isMatching) {
           // Move to cluster position
           const clusterPos = clusterLayoutRef.current.get(conceptIndex)
@@ -297,16 +319,16 @@ export function useSpritePool(): SpritePool {
           targetScale = 0.8
         }
       } else if (isFiltering && !isMatching) {
-        // Regular filtering (not search mode) - just dim
-        targetAlpha = 0.08
+        // Regular filtering (not cluster mode) - just dim in place
+        targetAlpha = 0.15
       }
 
       // Get or create card
       let card = activeCardsRef.current.get(key)
       if (!card) {
         card = acquireCard(key, index, worldX, worldY)
-        // If entering search mode, start from grid position
-        if (isSearchMode && isMatching) {
+        // If entering cluster mode, start from grid position
+        if (isClusterMode && isMatching) {
           card.currentX = worldX
           card.currentY = worldY
         }
@@ -441,6 +463,8 @@ export function useSpritePool(): SpritePool {
 
     appRef.current = null
     clusterLayoutRef.current.clear()
+    lastFilterSignatureRef.current = ''
+    lastClusterCenterRef.current = { x: 0, y: 0 }
   }, [releaseCard])
 
   return {

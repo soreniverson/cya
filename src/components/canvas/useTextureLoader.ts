@@ -4,11 +4,6 @@ import { useRef, useCallback } from 'react'
 import { Texture, Assets } from 'pixi.js'
 import { MAX_CONCURRENT_LOADS, getCategoryColor } from './canvas-utils'
 
-interface LoadRequest {
-  url: string
-  priority: number // squared distance from center
-}
-
 export interface TextureLoader {
   getTexture: (url: string) => Texture | null
   requestLoad: (url: string, priority: number) => void
@@ -21,7 +16,8 @@ export interface TextureLoader {
 export function useTextureLoader(): TextureLoader {
   const textureCache = useRef<Map<string, Texture>>(new Map())
   const loadingSet = useRef<Set<string>>(new Set())
-  const loadQueue = useRef<LoadRequest[]>([])
+  // Use Map for O(1) lookup instead of array.find() which is O(n)
+  const loadQueueMap = useRef<Map<string, number>>(new Map()) // url -> priority
   const activeLoads = useRef<number>(0)
   const frameCount = useRef<number>(0)
 
@@ -52,50 +48,58 @@ export function useTextureLoader(): TextureLoader {
   const processQueue = useCallback(() => {
     frameCount.current++
 
+    if (loadQueueMap.current.size === 0) return
+
+    // Convert to array and sort only when we need to process
     // Only sort every 10 frames to reduce overhead
-    if (frameCount.current % 10 === 0 && loadQueue.current.length > 1) {
-      loadQueue.current.sort((a, b) => a.priority - b.priority)
+    let toProcess: Array<[string, number]> | null = null
+    if (frameCount.current % 10 === 0 || activeLoads.current < MAX_CONCURRENT_LOADS) {
+      toProcess = Array.from(loadQueueMap.current.entries())
+      toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority
     }
+
+    if (!toProcess) return
 
     // Process up to max concurrent loads
     let processed = 0
-    while (activeLoads.current < MAX_CONCURRENT_LOADS && loadQueue.current.length > 0 && processed < 6) {
-      const request = loadQueue.current.shift()
-      if (!request) break
+    for (const [url, _priority] of toProcess) {
+      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 6) break
 
-      if (textureCache.current.has(request.url) || loadingSet.current.has(request.url)) {
+      if (textureCache.current.has(url) || loadingSet.current.has(url)) {
+        loadQueueMap.current.delete(url)
         continue
       }
 
-      loadTexture(request.url)
+      loadQueueMap.current.delete(url)
+      loadTexture(url)
       processed++
     }
   }, [loadTexture])
 
   const requestLoad = useCallback((url: string, priority: number) => {
-    // Already have it
+    // Already have it or loading it
     if (textureCache.current.has(url)) return
     if (loadingSet.current.has(url)) return
 
-    // Check if already in queue
-    const existing = loadQueue.current.find(r => r.url === url)
-    if (existing) {
-      // Update priority if better
-      if (priority < existing.priority) {
-        existing.priority = priority
+    // O(1) check and update
+    const existing = loadQueueMap.current.get(url)
+    if (existing !== undefined) {
+      // Update priority if better (lower = higher priority)
+      if (priority < existing) {
+        loadQueueMap.current.set(url, priority)
       }
       return
     }
 
-    loadQueue.current.push({ url, priority })
+    loadQueueMap.current.set(url, priority)
   }, [])
 
   const clearQueue = useCallback(() => {
-    loadQueue.current = []
+    loadQueueMap.current.clear()
   }, [])
 
   const hasPendingLoads = useCallback(() => {
-    return loadQueue.current.length > 0 || activeLoads.current > 0
+    return loadQueueMap.current.size > 0 || activeLoads.current > 0
   }, [])
 
   return {
