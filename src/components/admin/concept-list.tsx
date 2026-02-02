@@ -160,16 +160,30 @@ export function AdminConceptList({ concepts, categories }: AdminConceptListProps
           <tbody className="divide-y divide-border">
             {concepts.map((concept) => (
               <tr key={concept.id} className="hover:bg-secondary/50 transition-colors">
-                {/* Image */}
+                {/* Image with hover preview */}
                 <td className="px-4 py-3">
-                  <div className="relative w-12 h-12 bg-[#111] rounded overflow-hidden">
-                    <Image
-                      src={concept.thumbnail_url || concept.image_url}
-                      alt={concept.title}
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
+                  <div className="group relative">
+                    <div className="relative w-12 h-12 bg-[#111] rounded overflow-hidden">
+                      <Image
+                        src={concept.thumbnail_url || concept.image_url}
+                        alt={concept.title}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    </div>
+                    {/* Large preview on hover */}
+                    <div className="absolute left-14 top-0 z-50 hidden group-hover:block">
+                      <div className="relative w-64 h-64 bg-[#111] rounded-lg overflow-hidden shadow-2xl border border-border">
+                        <Image
+                          src={concept.mid_url || concept.image_url}
+                          alt={concept.title}
+                          fill
+                          className="object-contain"
+                          unoptimized
+                        />
+                      </div>
+                    </div>
                   </div>
                 </td>
 
