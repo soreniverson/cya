@@ -8,6 +8,9 @@ import { getConceptBySlug, getAdjacentConcepts } from '@/lib/queries'
 import { createStaticClient } from '@/lib/supabase/static'
 import type { Metadata } from 'next'
 
+// Cache concept pages for 1 hour, revalidate in background
+export const revalidate = 3600
+
 interface ConceptPageProps {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ category?: string }>
@@ -108,7 +111,7 @@ export default async function ConceptPage({ params, searchParams }: ConceptPageP
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-[1fr,320px] gap-8">
           {/* Image */}
-          <div className="relative aspect-square bg-[#111] overflow-hidden">
+          <div className="relative aspect-[4/5] max-h-[70vh] bg-[#111] overflow-hidden">
             <Image
               src={concept.image_url}
               alt={concept.title}

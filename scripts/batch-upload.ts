@@ -18,7 +18,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1)
 }
 
-const IDEAS_FOLDER = '/Users/soreniverson/Desktop/ideas/2023'
+const IDEAS_FOLDER = '/Users/soreniverson/Desktop/cya-images'
 const BUCKET_NAME = 'concepts'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -44,13 +44,17 @@ function parseFilename(filename: string): { date: Date; slug: string } | null {
   return { date, slug }
 }
 
-function getAllPngFiles(dir: string): string[] {
+function getAllPngFiles(dir: string, filterMonths?: string[]): string[] {
   const files: string[] = []
 
   const entries = fs.readdirSync(dir, { withFileTypes: true })
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name)
     if (entry.isDirectory()) {
+      // If we have a filter and this is a top-level directory, only process matching months
+      if (filterMonths && dir === IDEAS_FOLDER && !filterMonths.includes(entry.name)) {
+        continue
+      }
       files.push(...getAllPngFiles(fullPath))
     } else if (entry.name.toLowerCase().endsWith('.png')) {
       files.push(fullPath)

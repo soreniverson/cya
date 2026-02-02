@@ -7,9 +7,10 @@ import type { Concept } from '@/lib/types'
 
 interface ConceptCardProps {
   concept: Concept
+  priority?: boolean
 }
 
-export function ConceptCard({ concept }: ConceptCardProps) {
+export function ConceptCard({ concept, priority = false }: ConceptCardProps) {
   const formattedDate = concept.date_posted
     ? new Date(concept.date_posted).toLocaleDateString('en-US', {
         month: 'short',
@@ -30,6 +31,7 @@ export function ConceptCard({ concept }: ConceptCardProps) {
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
           className="object-cover transition-transform duration-150 group-hover:scale-[1.02]"
+          priority={priority}
         />
       </div>
       <div className="mt-3 space-y-1">

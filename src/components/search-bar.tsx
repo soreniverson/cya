@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useTransition } from 'react'
+import { useCallback, useRef, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Search, X } from 'lucide-react'
@@ -10,6 +10,7 @@ export function SearchBar() {
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const [value, setValue] = useState(searchParams.get('q') ?? '')
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const updateSearch = useCallback(
     (term: string) => {
@@ -32,12 +33,15 @@ export function SearchBar() {
       const newValue = e.target.value
       setValue(newValue)
 
+      // Clear previous timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+
       // Debounce the actual search
-      const timeoutId = setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         updateSearch(newValue)
       }, 300)
-
-      return () => clearTimeout(timeoutId)
     },
     [updateSearch]
   )

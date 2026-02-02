@@ -48,9 +48,12 @@ export function ConceptGrid({ initialConcepts, totalCount }: ConceptGridProps) {
       const data = await res.json()
 
       if (data.concepts.length > 0) {
-        setConcepts((prev) => [...prev, ...data.concepts])
+        setConcepts((prev) => {
+          const newConcepts = [...prev, ...data.concepts]
+          setHasMore(newConcepts.length < data.totalCount)
+          return newConcepts
+        })
         setPage(nextPage)
-        setHasMore(concepts.length + data.concepts.length < data.totalCount)
       } else {
         setHasMore(false)
       }
@@ -59,7 +62,7 @@ export function ConceptGrid({ initialConcepts, totalCount }: ConceptGridProps) {
     } finally {
       setLoading(false)
     }
-  }, [loading, hasMore, page, category, search, concepts.length])
+  }, [loading, hasMore, page, category, search])
 
   // Intersection observer for infinite scroll
   useEffect(() => {
@@ -100,8 +103,8 @@ export function ConceptGrid({ initialConcepts, totalCount }: ConceptGridProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {concepts.map((concept) => (
-            <ConceptCard key={concept.id} concept={concept} />
+          {concepts.map((concept, index) => (
+            <ConceptCard key={concept.id} concept={concept} priority={index < 8} />
           ))}
           {loading && <ConceptGridSkeleton count={PAGE_SIZE} />}
         </div>
