@@ -50,6 +50,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const hoveredIndexRef = useRef<number | null>(null)
     const isDraggingRef = useRef(false)
     const hasDraggedRef = useRef(false)
+    const dragStartPosRef = useRef<{ x: number; y: number } | null>(null)
+    const isReadyForClicksRef = useRef(false) // Prevents accidental clicks on page load
     const lastZoomPercentRef = useRef<number>(-1)
     const zoomThrottleRef = useRef<number>(0)
     const tickRef = useRef<() => void>(() => {})
@@ -188,6 +190,11 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
             rafRef.current = requestAnimationFrame(() => tickRef.current())
           }
         }, 0)
+
+        // Enable clicks after a short delay to prevent accidental clicks on page load
+        setTimeout(() => {
+          isReadyForClicksRef.current = true
+        }, 300)
       }
 
       initApp()
@@ -195,6 +202,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       return () => {
         mounted = false
         cancelAnimationFrame(rafRef.current)
+        isReadyForClicksRef.current = false
 
         if (appRef.current) {
           spritePool.cleanup()
@@ -229,6 +237,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         isDraggingRef.current = true
         hasDraggedRef.current = false
+        dragStartPosRef.current = { x: e.clientX, y: e.clientY }
         viewport.onDragStart(e.clientX, e.clientY)
         ensureRunning()
 
@@ -269,7 +278,16 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
           isDraggingRef.current = false
           viewport.onDragEnd()
 
-          if (!hasDraggedRef.current) {
+          // Only trigger click if:
+          // 1. Ready for clicks (not during page load)
+          // 2. Didn't drag (no pointermove with drag)
+          // 3. Didn't move much from start position (< 5px)
+          const startPos = dragStartPosRef.current
+          const movedDistance = startPos
+            ? Math.sqrt(Math.pow(e.clientX - startPos.x, 2) + Math.pow(e.clientY - startPos.y, 2))
+            : 999
+
+          if (isReadyForClicksRef.current && !hasDraggedRef.current && movedDistance < 5) {
             const rect = container.getBoundingClientRect()
             const x = e.clientX - rect.left
             const y = e.clientY - rect.top
@@ -282,6 +300,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
             }
           }
 
+          dragStartPosRef.current = null
           container.style.cursor = hoveredIndexRef.current !== null ? 'pointer' : 'grab'
         }
       }
