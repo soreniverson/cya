@@ -110,8 +110,87 @@ export function CanvasControls({
       </div>
 
       {/* Bottom controls bar */}
-      <div className="absolute bottom-6 left-6 right-6 z-10 pointer-events-none">
-        <div className="flex items-center justify-between gap-3">
+      <div className="absolute bottom-6 left-4 right-4 sm:left-6 sm:right-6 z-10 pointer-events-none pb-[env(safe-area-inset-bottom)]">
+        {/* Mobile layout: 4 buttons or expanded control */}
+        <div className="flex items-center justify-center gap-2 sm:hidden pointer-events-auto">
+          {mode === 'zoom' ? (
+            // Default: 4 buttons in a row
+            <>
+              <ControlButton
+                active={mode === 'filter'}
+                onClick={() => toggleMode('filter')}
+                title="Filter by category"
+              >
+                <SlidersHorizontal className="size-[18px]" />
+              </ControlButton>
+              <ControlButton
+                active={mode === 'search'}
+                onClick={() => toggleMode('search')}
+                title="Search"
+              >
+                <Search className="size-[18px]" />
+              </ControlButton>
+              <ControlButton
+                onClick={() => setIsInfoOpen(true)}
+                title="About"
+              >
+                <Info className="size-[18px]" />
+              </ControlButton>
+              <ControlButton
+                onClick={onRandomConcept}
+                title="Random concept"
+              >
+                <Dices className="size-[18px]" />
+              </ControlButton>
+            </>
+          ) : mode === 'search' ? (
+            // Search mode: search input with close button
+            <div className="flex items-center gap-2 w-full max-w-sm">
+              <div className="control-surface px-4 h-11 flex items-center flex-1">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search concepts..."
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  className="w-full bg-transparent text-sm text-center text-white placeholder:text-neutral-500 focus:outline-none"
+                />
+              </div>
+              <ControlButton onClick={() => toggleMode('search')}>
+                <X className="size-[18px]" />
+              </ControlButton>
+            </div>
+          ) : (
+            // Filter mode: filter pills with close button
+            <div className="flex items-center gap-2 w-full">
+              <div className="control-surface px-2 h-11 flex items-center gap-1 overflow-x-auto flex-1 scrollbar-none">
+                <FilterPill
+                  active={selectedCategory === null}
+                  onClick={() => onCategoryChange(null)}
+                >
+                  All
+                </FilterPill>
+                {categories.map((cat) => (
+                  <FilterPill
+                    key={cat.category}
+                    active={selectedCategory === cat.category}
+                    onClick={() => onCategoryChange(
+                      selectedCategory === cat.category ? null : cat.category
+                    )}
+                  >
+                    {cat.category}
+                  </FilterPill>
+                ))}
+              </div>
+              <ControlButton onClick={() => toggleMode('filter')}>
+                <X className="size-[18px]" />
+              </ControlButton>
+            </div>
+          )}
+        </div>
+
+        {/* Desktop layout: original 3-column layout */}
+        <div className="hidden sm:flex items-center justify-between gap-3">
           {/* Left side - Filter and Search buttons */}
           <div className="flex gap-2 pointer-events-auto">
             <ControlButton
@@ -161,7 +240,7 @@ export function CanvasControls({
                   max="100"
                   value={zoomPercent}
                   onChange={(e) => onZoomChange(Number(e.target.value))}
-                  className="zoom-slider w-36 sm:w-48"
+                  className="zoom-slider w-48"
                 />
               </div>
             </div>
@@ -175,9 +254,8 @@ export function CanvasControls({
                   : "opacity-0 scale-95 pointer-events-none absolute"
               )}
             >
-              <div className="control-surface px-4 h-11 flex items-center w-72 sm:w-96">
+              <div className="control-surface px-4 h-11 flex items-center w-96">
                 <input
-                  ref={searchInputRef}
                   type="text"
                   placeholder="Search concepts..."
                   value={searchQuery}
