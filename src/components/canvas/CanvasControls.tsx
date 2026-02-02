@@ -117,14 +117,12 @@ export function CanvasControls({
             // Default: 4 buttons in a row
             <>
               <ControlButton
-                active={mode === 'filter'}
                 onClick={() => toggleMode('filter')}
                 title="Filter by category"
               >
                 <SlidersHorizontal className="size-[18px]" />
               </ControlButton>
               <ControlButton
-                active={mode === 'search'}
                 onClick={() => toggleMode('search')}
                 title="Search"
               >
