@@ -2,7 +2,7 @@
 
 import { useRef, useCallback } from 'react'
 import { Container, Sprite, Texture, Application } from 'pixi.js'
-import type { TextureLoader } from './useTextureLoader'
+import type { TextureLoader, ImageSize } from './useTextureLoader'
 import type { Concept } from '@/lib/types'
 import {
   type VisibleCard,
@@ -10,7 +10,6 @@ import {
   type GridConfig,
   getCardKey,
   getLODLevel,
-  getImageUrl,
   getCardWorldPosition,
   CARD_SIZE,
   CELL_SIZE,
@@ -23,6 +22,7 @@ interface PooledCard {
   imageSprite: Sprite | null
   conceptIndex: number
   lastTextureUrl: string | null
+  currentImageSize: ImageSize | null
   // Animation state
   currentX: number
   currentY: number
@@ -34,11 +34,14 @@ interface PooledCard {
   targetScale: number
   // Image fade-in state
   imageAlpha: number
+  // Progressive loading: track how long card has been visible
+  visibleSince: number
 }
 
 // Animation config
 const LERP_SPEED = 0.1 // How fast cards animate (0-1, lower = smoother)
 const CLUSTER_CARD_SCALE = 1.0 // Scale of cards in cluster
+const UPGRADE_DELAY_MS = 400 // Wait this long before upgrading from thumb to medium
 
 export interface SpritePool {
   init: (app: Application) => void
@@ -82,6 +85,9 @@ export function useSpritePool(): SpritePool {
   const lastFilterSignatureRef = useRef<string>('')
   const lastClusterCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
+  // Track which URLs are currently visible for off-screen cleanup
+  const previousVisibleUrlsRef = useRef<Set<string>>(new Set())
+
   const getContainer = useCallback((): Container => {
     if (!containerRef.current) {
       containerRef.current = new Container()
@@ -111,6 +117,8 @@ export function useSpritePool(): SpritePool {
       card.currentScale = 1
       card.targetScale = 1
       card.imageAlpha = 0
+      card.visibleSince = Date.now()
+      card.currentImageSize = null
     } else {
       const container = new Container()
 
@@ -120,6 +128,7 @@ export function useSpritePool(): SpritePool {
         imageSprite: null,
         conceptIndex: index,
         lastTextureUrl: null,
+        currentImageSize: null,
         currentX: x,
         currentY: y,
         targetX: x,
@@ -129,6 +138,7 @@ export function useSpritePool(): SpritePool {
         currentScale: 1,
         targetScale: 1,
         imageAlpha: 0,
+        visibleSince: Date.now(),
       }
 
       getContainer().addChild(container)
@@ -138,18 +148,24 @@ export function useSpritePool(): SpritePool {
     return card
   }, [getContainer])
 
-  const releaseCard = useCallback((key: string) => {
+  const releaseCard = useCallback((key: string, textureLoader?: TextureLoader) => {
     const card = activeCardsRef.current.get(key)
     if (!card) return
 
     activeCardsRef.current.delete(key)
     card.container.visible = false
 
+    // Mark the texture as off-screen for potential cleanup
+    if (card.lastTextureUrl && textureLoader) {
+      textureLoader.markOffscreen(card.lastTextureUrl)
+    }
+
     if (card.imageSprite) {
       card.imageSprite.texture = Texture.EMPTY
       card.imageSprite.visible = false
     }
     card.lastTextureUrl = null
+    card.currentImageSize = null
 
     recyclePoolRef.current.push(card)
   }, [])
@@ -208,6 +224,7 @@ export function useSpritePool(): SpritePool {
     const container = getContainer()
     let isAnimating = false
     const totalConcepts = concepts.length
+    const now = Date.now()
 
     // Update container transform
     container.scale.set(viewport.zoom)
@@ -217,7 +234,10 @@ export function useSpritePool(): SpritePool {
     const isFiltering = filteredIndices.size < totalConcepts
     const lod = getLODLevel(viewport.zoom)
     const showImages = lod !== 'placeholder'
-    const useThumb = viewport.zoom < LOD.SHOW_DATE
+
+    // Determine target image size based on zoom level
+    // At lower zoom, use thumb. At higher zoom, use medium (but cap at 500px)
+    const targetImageSize: ImageSize = viewport.zoom < LOD.SHOW_DATE ? 'thumb' : 'medium'
 
     // Only recalculate cluster layout when needed (signature changed or mode changed)
     const currentSignature = isClusterMode ? getFilterSignature(filteredIndices) : ''
@@ -239,6 +259,7 @@ export function useSpritePool(): SpritePool {
     lastClusterModeRef.current = isClusterMode
 
     const neededKeys = new Set<string>()
+    const currentVisibleUrls = new Set<string>()
 
     // Build a Set of visible concept indices for O(1) lookup (FIX: was O(n²))
     const visibleConceptIndices = new Set<number>()
@@ -366,9 +387,18 @@ export function useSpritePool(): SpritePool {
       // Handle image sprite
       const shouldShowImage = showImages && card.currentAlpha > 0.1 && concept
       if (shouldShowImage) {
-        const imageUrl = useThumb
-          ? getImageUrl(concept.image_url, concept.thumbnail_url, 'thumb')
-          : concept.image_url
+        // Use the concept's image_url as the cache key (not the resized URL)
+        const imageUrl = concept.image_url
+
+        // Progressive loading: always try thumb first
+        // Then upgrade to medium after card has been visible for a while
+        const visibleDuration = now - card.visibleSince
+        const shouldUpgrade = targetImageSize === 'medium' && visibleDuration > UPGRADE_DELAY_MS
+        const desiredSize: ImageSize = shouldUpgrade ? 'medium' : 'thumb'
+
+        // Track this URL as visible
+        currentVisibleUrls.add(imageUrl)
+        textureLoader.markVisible(imageUrl)
 
         const texture = textureLoader.getTexture(imageUrl)
 
@@ -397,6 +427,7 @@ export function useSpritePool(): SpritePool {
             }
 
             card.lastTextureUrl = imageUrl
+            card.currentImageSize = desiredSize
             // Reset fade-in animation for new texture
             card.imageAlpha = 0
           }
@@ -410,11 +441,17 @@ export function useSpritePool(): SpritePool {
           if (card.imageAlpha < 0.99) {
             isAnimating = true
           }
+
+          // If we have thumb but want medium, request upgrade
+          if (card.currentImageSize === 'thumb' && shouldUpgrade) {
+            textureLoader.requestLoad(imageUrl, distanceFromCenter, 'medium')
+          }
         } else {
           if (card.imageSprite) {
             card.imageSprite.visible = false
           }
-          textureLoader.requestLoad(imageUrl, distanceFromCenter)
+          // Request the appropriate size
+          textureLoader.requestLoad(imageUrl, distanceFromCenter, desiredSize)
         }
       } else {
         if (card.imageSprite) {
@@ -422,6 +459,14 @@ export function useSpritePool(): SpritePool {
         }
       }
     }
+
+    // Mark URLs that are no longer visible as off-screen
+    for (const url of previousVisibleUrlsRef.current) {
+      if (!currentVisibleUrls.has(url)) {
+        textureLoader.markOffscreen(url)
+      }
+    }
+    previousVisibleUrlsRef.current = currentVisibleUrls
 
     // Release cards no longer needed
     for (const [key, card] of activeCardsRef.current) {
@@ -436,7 +481,7 @@ export function useSpritePool(): SpritePool {
           card.container.scale.set(card.currentScale)
           isAnimating = true
         } else {
-          releaseCard(key)
+          releaseCard(key, textureLoader)
         }
       }
     }
@@ -466,6 +511,7 @@ export function useSpritePool(): SpritePool {
     clusterLayoutRef.current.clear()
     lastFilterSignatureRef.current = ''
     lastClusterCenterRef.current = { x: 0, y: 0 }
+    previousVisibleUrlsRef.current.clear()
   }, [releaseCard])
 
   return {
