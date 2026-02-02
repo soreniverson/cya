@@ -5,66 +5,35 @@ import { Texture, Assets } from 'pixi.js'
 import { getCategoryColor } from './canvas-utils'
 
 // Configuration
-const MAX_TEXTURE_COUNT = 150 // Maximum textures in cache before eviction
-const EVICTION_BATCH_SIZE = 30 // Remove this many when over limit
-const THUMB_CONCURRENT_LOADS = 8 // Concurrent loads for thumbnails
-const MEDIUM_CONCURRENT_LOADS = 4 // Concurrent loads for medium images
+const MAX_TEXTURE_COUNT = 120 // Maximum textures in cache before eviction
+const EVICTION_BATCH_SIZE = 25 // Remove this many when over limit
+const MAX_CONCURRENT_LOADS = 6 // Total concurrent loads
 const OFFSCREEN_DISPOSE_DELAY = 3000 // ms before disposing off-screen textures
 
-export type ImageSize = 'thumb' | 'medium'
+export type ImageSize = 'thumb' | 'full'
 
 export interface TextureLoader {
   getTexture: (url: string) => Texture | null
-  requestLoad: (url: string, priority: number, size: ImageSize) => void
+  requestLoad: (url: string, priority: number) => void
   processQueue: () => void
   getCategoryColor: (category: string | null) => number
   clearQueue: () => void
   hasPendingLoads: () => boolean
   markVisible: (url: string) => void
   markOffscreen: (url: string) => void
-  getStats: () => { cached: number; loading: number; queued: number }
 }
 
 interface CacheEntry {
   texture: Texture
   lastUsed: number
-  size: ImageSize
-}
-
-interface QueueEntry {
-  priority: number
-  size: ImageSize
-}
-
-/**
- * Transform a Supabase storage URL to request a specific size
- * Uses Supabase's image transformation API
- */
-function getResizedUrl(url: string, size: ImageSize): string {
-  // Only transform Supabase URLs
-  if (!url.includes('supabase.co/storage/v1/object/')) {
-    return url
-  }
-
-  // Convert object URL to render URL for transformation
-  // From: /storage/v1/object/public/bucket/file
-  // To:   /storage/v1/render/image/public/bucket/file?width=X
-  const renderUrl = url.replace(
-    '/storage/v1/object/',
-    '/storage/v1/render/image/'
-  )
-
-  const width = size === 'thumb' ? 200 : 500 // thumb: 200px, medium: 500px (plenty for 240px cards)
-  const separator = renderUrl.includes('?') ? '&' : '?'
-  return `${renderUrl}${separator}width=${width}&quality=80`
 }
 
 export function useTextureLoader(): TextureLoader {
   // LRU cache with metadata
   const textureCache = useRef<Map<string, CacheEntry>>(new Map())
   const loadingSet = useRef<Set<string>>(new Set())
-  const loadQueueMap = useRef<Map<string, QueueEntry>>(new Map())
-  const activeLoads = useRef<{ thumb: number; medium: number }>({ thumb: 0, medium: 0 })
+  const loadQueueMap = useRef<Map<string, number>>(new Map()) // url -> priority
+  const activeLoads = useRef<number>(0)
   const frameCount = useRef<number>(0)
 
   // Off-screen disposal tracking
@@ -101,23 +70,20 @@ export function useTextureLoader(): TextureLoader {
     return null
   }, [])
 
-  const loadTexture = useCallback(async (url: string, size: ImageSize) => {
+  const loadTexture = useCallback(async (url: string) => {
     if (textureCache.current.has(url) || loadingSet.current.has(url)) {
       return
     }
 
     loadingSet.current.add(url)
-    activeLoads.current[size]++
+    activeLoads.current++
 
     try {
-      // Get resized URL for loading
-      const resizedUrl = getResizedUrl(url, size)
-      const texture = await Assets.load<Texture>(resizedUrl)
+      const texture = await Assets.load<Texture>(url)
 
       textureCache.current.set(url, {
         texture,
         lastUsed: Date.now(),
-        size,
       })
 
       // Check if we need to evict
@@ -127,7 +93,7 @@ export function useTextureLoader(): TextureLoader {
       console.warn('Failed to load:', url)
     } finally {
       loadingSet.current.delete(url)
-      activeLoads.current[size]--
+      activeLoads.current--
     }
   }, [evictIfNeeded])
 
@@ -137,49 +103,31 @@ export function useTextureLoader(): TextureLoader {
     if (loadQueueMap.current.size === 0) return
 
     // Only process every 10 frames to reduce overhead
-    if (frameCount.current % 10 !== 0) return
+    if (frameCount.current % 10 !== 0 && activeLoads.current >= MAX_CONCURRENT_LOADS / 2) {
+      return
+    }
 
-    // Separate queues by size
-    const thumbQueue: Array<[string, number]> = []
-    const mediumQueue: Array<[string, number]> = []
+    // Convert to array and sort by priority
+    const toProcess = Array.from(loadQueueMap.current.entries())
+    toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority (lower = higher priority)
 
-    for (const [url, entry] of loadQueueMap.current.entries()) {
+    // Process up to 4 per frame
+    let processed = 0
+    for (const [url] of toProcess) {
+      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 4) break
+
       if (textureCache.current.has(url) || loadingSet.current.has(url)) {
         loadQueueMap.current.delete(url)
         continue
       }
 
-      if (entry.size === 'thumb') {
-        thumbQueue.push([url, entry.priority])
-      } else {
-        mediumQueue.push([url, entry.priority])
-      }
-    }
-
-    // Sort by priority (lower = higher priority)
-    thumbQueue.sort((a, b) => a[1] - b[1])
-    mediumQueue.sort((a, b) => a[1] - b[1])
-
-    // Process thumbnails (higher concurrency)
-    let thumbProcessed = 0
-    for (const [url] of thumbQueue) {
-      if (activeLoads.current.thumb >= THUMB_CONCURRENT_LOADS || thumbProcessed >= 4) break
       loadQueueMap.current.delete(url)
-      loadTexture(url, 'thumb')
-      thumbProcessed++
-    }
-
-    // Process medium images (lower concurrency)
-    let mediumProcessed = 0
-    for (const [url] of mediumQueue) {
-      if (activeLoads.current.medium >= MEDIUM_CONCURRENT_LOADS || mediumProcessed >= 2) break
-      loadQueueMap.current.delete(url)
-      loadTexture(url, 'medium')
-      mediumProcessed++
+      loadTexture(url)
+      processed++
     }
   }, [loadTexture])
 
-  const requestLoad = useCallback((url: string, priority: number, size: ImageSize) => {
+  const requestLoad = useCallback((url: string, priority: number) => {
     // Already have it or loading it
     if (textureCache.current.has(url)) return
     if (loadingSet.current.has(url)) return
@@ -187,13 +135,13 @@ export function useTextureLoader(): TextureLoader {
     const existing = loadQueueMap.current.get(url)
     if (existing !== undefined) {
       // Update priority if better (lower = higher priority)
-      if (priority < existing.priority) {
-        loadQueueMap.current.set(url, { priority, size })
+      if (priority < existing) {
+        loadQueueMap.current.set(url, priority)
       }
       return
     }
 
-    loadQueueMap.current.set(url, { priority, size })
+    loadQueueMap.current.set(url, priority)
   }, [])
 
   // Mark a URL as currently visible (prevents eviction and disposal)
@@ -238,14 +186,8 @@ export function useTextureLoader(): TextureLoader {
   }, [])
 
   const hasPendingLoads = useCallback(() => {
-    return loadQueueMap.current.size > 0 || activeLoads.current.thumb > 0 || activeLoads.current.medium > 0
+    return loadQueueMap.current.size > 0 || activeLoads.current > 0
   }, [])
-
-  const getStats = useCallback(() => ({
-    cached: textureCache.current.size,
-    loading: activeLoads.current.thumb + activeLoads.current.medium,
-    queued: loadQueueMap.current.size,
-  }), [])
 
   return {
     getTexture,
@@ -256,6 +198,5 @@ export function useTextureLoader(): TextureLoader {
     hasPendingLoads,
     markVisible,
     markOffscreen,
-    getStats,
   }
 }

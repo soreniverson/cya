@@ -103,19 +103,16 @@ export function CanvasControls({
 
   return (
     <>
-      {/* Vignette overlay */}
+      {/* Vignette overlay - lighter on mobile */}
       <div className="pointer-events-none fixed inset-0 z-[1]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_30%,rgba(0,0,0,0.6)_100%)]" />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/70 to-transparent" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_40%,rgba(0,0,0,0.4)_100%)] sm:bg-[radial-gradient(ellipse_at_center,transparent_0%,transparent_30%,rgba(0,0,0,0.6)_100%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-24 sm:h-40 bg-gradient-to-t from-black/50 sm:from-black/70 to-transparent" />
       </div>
 
       {/* Bottom controls bar */}
-      {/* Mobile: solid black bar behind controls */}
-      <div className="fixed bottom-0 left-0 right-0 h-24 bg-black z-[9] sm:hidden" />
-
-      <div className="absolute bottom-0 left-0 right-0 sm:bottom-6 sm:left-6 sm:right-6 z-10 pointer-events-none pb-[env(safe-area-inset-bottom)] sm:pb-0">
+      <div className="fixed bottom-0 left-0 right-0 sm:bottom-6 sm:left-6 sm:right-6 z-10 pointer-events-none">
         {/* Mobile layout: 4 buttons or expanded control */}
-        <div className="flex items-center justify-center gap-3 py-4 px-4 sm:hidden pointer-events-auto">
+        <div className="flex items-center justify-center gap-3 py-3 px-4 pb-[max(12px,env(safe-area-inset-bottom))] sm:hidden pointer-events-auto">
           {mode === 'zoom' ? (
             // Default: 4 buttons in a row
             <>
@@ -454,7 +451,7 @@ function ControlButton({
       onClick={onClick}
       title={title}
       className={cn(
-        "size-14 sm:size-11 rounded-full flex items-center justify-center transition-all duration-150",
+        "size-12 sm:size-11 rounded-full flex items-center justify-center transition-all duration-150",
         "bg-neutral-800/85 backdrop-blur-xl border border-white/[0.06]",
         "text-neutral-300 hover:text-white",
         active && "ring-1 ring-white/20 ring-inset"
