@@ -7,7 +7,7 @@ export const CELL_SIZE = CARD_SIZE + CARD_GAP
 export const CARD_RADIUS = 8
 
 // Zoom limits
-export const MIN_ZOOM = 0.2  // ~10% on slider - don't zoom out further
+export const MIN_ZOOM = 0.25  // Cap zoom out to prevent white box rendering issue
 export const MAX_ZOOM = 2.0
 export const DEFAULT_ZOOM = 0.3 // Start slightly zoomed out
 
