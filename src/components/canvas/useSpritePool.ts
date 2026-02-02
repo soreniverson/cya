@@ -319,8 +319,9 @@ export function useSpritePool(): SpritePool {
           targetScale = 0.8
         }
       } else if (isFiltering && !isMatching) {
-        // Regular filtering (not cluster mode) - just dim in place
-        targetAlpha = 0.15
+        // Regular filtering (not cluster mode) - hide non-matching cards
+        targetAlpha = 0
+        targetScale = 0.9
       }
 
       // Get or create card

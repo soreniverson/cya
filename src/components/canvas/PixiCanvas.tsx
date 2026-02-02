@@ -53,12 +53,6 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const zoomThrottleRef = useRef<number>(0)
     const tickRef = useRef<() => void>(() => {})
 
-    // Store in refs to avoid recreating callbacks
-    const filteredIndicesRef = useRef(filteredIndices)
-    const isClusterModeRef = useRef(isClusterMode)
-    filteredIndicesRef.current = filteredIndices
-    isClusterModeRef.current = isClusterMode
-
     // Memoize gridConfig to prevent useViewport from resetting on every render
     const gridConfig = useMemo(() => computeGridConfig(concepts.length), [concepts.length])
     const viewport = useViewport(gridConfig)
@@ -74,7 +68,6 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     }), [viewport])
 
     // Render function with caching
-    // Uses refs for filteredIndices and isClusterMode to avoid callback recreation
     const render = useCallback((forceRecalc = false): boolean => {
       const app = appRef.current
       if (!app) return false
@@ -92,16 +85,16 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         visibleCardsCache,
         vp,
         textureLoader,
-        filteredIndicesRef.current,
+        filteredIndices,
         hoveredIndexRef.current,
         concepts,
-        isClusterModeRef.current,
+        isClusterMode,
         gridConfig
       )
 
       app.render()
       return stillAnimating
-    }, [viewport, gridConfig, concepts, spritePool, textureLoader])
+    }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isClusterMode])
 
     // Animation loop with throttled zoom callback
     const tick = useCallback(() => {
@@ -375,7 +368,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         render(true)
         ensureRunning()
       }
-    }, [filteredIndices, isClusterMode]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [filteredIndices, isClusterMode, render, ensureRunning])
 
     return (
       <div
