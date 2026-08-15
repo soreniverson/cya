@@ -4,12 +4,21 @@ import { useRef, useCallback } from 'react'
 import { Texture, Assets } from 'pixi.js'
 import { MAX_CONCURRENT_LOADS, getCategoryColor } from './canvas-utils'
 
-// Bound GPU memory. Comfortably above VISIBLE_CARDS.MAX_ZOOMED_OUT (500) so
-// nothing on screen is ever a candidate, but far below the ~1900 textures a
-// long session on an infinite canvas would otherwise accumulate forever.
+// Bound GPU memory. Only engages in a long session that has panned across a
+// large part of the archive; a full viewport is at most ~500 textures.
 const MAX_CACHED_TEXTURES = 900
-// A texture touched this recently may still be on screen - never evict it.
-const EVICT_GRACE_FRAMES = 180
+
+// A texture is only a candidate once nothing has drawn it for this long.
+// Deliberately wall-clock, not a frame or tick count: processQueue is driven by
+// the render loop, by every load settling, and by a timer, so any counter it
+// increments bears no relation to how long a texture has actually been idle.
+const EVICT_GRACE_MS = 30_000
+const EVICT_CHECK_INTERVAL_MS = 1_000
+
+// A load may fail transiently (dropped connection, a blip at the origin).
+// Retry with backoff before giving up on a URL for good.
+const MAX_LOAD_ATTEMPTS = 3
+const RETRY_BACKOFF_MS = 1_000
 
 export interface TextureLoader {
   getTexture: (url: string) => Texture | null
@@ -26,14 +35,16 @@ export interface TextureLoader {
 export function useTextureLoader(): TextureLoader {
   const textureCache = useRef<Map<string, Texture>>(new Map())
   const loadingSet = useRef<Set<string>>(new Set())
-  // URLs that failed to load. Without this a 404 satisfies neither the cache
-  // nor the loading check, so it gets re-queued on every single frame.
+  // URLs that have failed MAX_LOAD_ATTEMPTS times. Without this a 404 satisfies
+  // neither the cache nor the loading check, so it is re-queued every frame.
   const failedSet = useRef<Set<string>>(new Set())
+  const attempts = useRef<Map<string, number>>(new Map())
+  const retryAfter = useRef<Map<string, number>>(new Map())
   // Use Map for O(1) lookup instead of array.find() which is O(n)
   const loadQueueMap = useRef<Map<string, number>>(new Map()) // url -> priority
-  const lastUsedFrame = useRef<Map<string, number>>(new Map())
+  const lastUsedAt = useRef<Map<string, number>>(new Map()) // url -> epoch ms
   const activeLoads = useRef<number>(0)
-  const frameCount = useRef<number>(0)
+  const lastEvictCheck = useRef<number>(0)
   const onTextureLoaded = useRef<(() => void) | null>(null)
   const destroyed = useRef(false)
   // Set while a queue drain is already scheduled, so we schedule at most one.
@@ -49,33 +60,44 @@ export function useTextureLoader(): TextureLoader {
   const getTexture = useCallback((url: string): Texture | null => {
     const texture = textureCache.current.get(url)
     if (!texture) return null
-    lastUsedFrame.current.set(url, frameCount.current)
+    // Touch on every read. Anything currently drawn is touched each frame, so
+    // an on-screen texture can never age into the eviction window.
+    lastUsedAt.current.set(url, Date.now())
     return texture
   }, [])
 
+  /** True when the URL is unavailable right now: cached, in flight, or cooling off. */
+  const isUnavailable = useCallback((url: string): boolean => {
+    if (textureCache.current.has(url)) return true
+    if (loadingSet.current.has(url)) return true
+    if (failedSet.current.has(url)) return true
+    const until = retryAfter.current.get(url)
+    return until !== undefined && Date.now() < until
+  }, [])
+
   const loadTexture = useCallback(async (url: string) => {
-    if (
-      textureCache.current.has(url) ||
-      loadingSet.current.has(url) ||
-      failedSet.current.has(url)
-    ) {
-      return
-    }
+    if (isUnavailable(url)) return
 
     loadingSet.current.add(url)
     activeLoads.current++
 
     try {
       const texture = await Assets.load<Texture>(url)
-      if (destroyed.current) {
-        texture?.destroy(true)
-        return
-      }
+      if (destroyed.current) return
       textureCache.current.set(url, texture)
-      lastUsedFrame.current.set(url, frameCount.current)
+      lastUsedAt.current.set(url, Date.now())
+      attempts.current.delete(url)
+      retryAfter.current.delete(url)
     } catch {
-      // Remember the failure so we stop asking. Shows the placeholder instead.
-      failedSet.current.add(url)
+      const n = (attempts.current.get(url) ?? 0) + 1
+      attempts.current.set(url, n)
+      if (n >= MAX_LOAD_ATTEMPTS) {
+        // Genuinely broken. Stop asking; the placeholder stands in.
+        failedSet.current.add(url)
+      } else {
+        // Probably transient. Back off, then let it be requeued.
+        retryAfter.current.set(url, Date.now() + RETRY_BACKOFF_MS * n)
+      }
     } finally {
       loadingSet.current.delete(url)
       activeLoads.current--
@@ -87,17 +109,17 @@ export function useTextureLoader(): TextureLoader {
         onTextureLoaded.current?.()
       }
     }
-  }, [])
+  }, [isUnavailable])
 
-  // Drop textures that have been off screen long enough to be safe to release.
+  /** Release textures nothing has drawn for a while. */
   const evictIfNeeded = useCallback(() => {
     const cache = textureCache.current
     if (cache.size <= MAX_CACHED_TEXTURES) return
 
-    const cutoff = frameCount.current - EVICT_GRACE_FRAMES
+    const cutoff = Date.now() - EVICT_GRACE_MS
     const candidates: Array<[string, number]> = []
     for (const url of cache.keys()) {
-      const used = lastUsedFrame.current.get(url) ?? 0
+      const used = lastUsedAt.current.get(url) ?? 0
       if (used < cutoff) candidates.push([url, used])
     }
 
@@ -106,20 +128,23 @@ export function useTextureLoader(): TextureLoader {
     let toEvict = cache.size - MAX_CACHED_TEXTURES
     for (const [url] of candidates) {
       if (toEvict <= 0) break
-      const texture = cache.get(url)
       cache.delete(url)
-      lastUsedFrame.current.delete(url)
-      texture?.destroy(true)
+      lastUsedAt.current.delete(url)
+      // Hand the whole job to Pixi. Destroying the texture ourselves *and*
+      // unloading raced: Assets could still serve the destroyed instance to a
+      // later load of the same URL, which draws as a blank tile instead of
+      // refetching. Assets.unload disposes it and clears its own cache together.
       Assets.unload(url).catch(() => {})
       toEvict--
     }
   }, [])
 
   const processQueue = useCallback(() => {
-    frameCount.current++
-
-    // Cheap no-op until the cache is actually over budget.
-    if (frameCount.current % 60 === 0) evictIfNeeded()
+    const now = Date.now()
+    if (now - lastEvictCheck.current > EVICT_CHECK_INTERVAL_MS) {
+      lastEvictCheck.current = now
+      evictIfNeeded()
+    }
 
     const free = MAX_CONCURRENT_LOADS - activeLoads.current
     if (loadQueueMap.current.size === 0 || free <= 0) return
@@ -133,12 +158,12 @@ export function useTextureLoader(): TextureLoader {
     for (const [url] of toProcess) {
       if (started >= free) break
 
-      if (
-        textureCache.current.has(url) ||
-        loadingSet.current.has(url) ||
-        failedSet.current.has(url)
-      ) {
-        loadQueueMap.current.delete(url)
+      if (isUnavailable(url)) {
+        // Leave cooling-off URLs queued so they get another go once the backoff
+        // expires; drop the ones that are cached, loading, or permanently dead.
+        if (!retryAfter.current.has(url) || failedSet.current.has(url)) {
+          loadQueueMap.current.delete(url)
+        }
         continue
       }
 
@@ -146,7 +171,7 @@ export function useTextureLoader(): TextureLoader {
       loadTexture(url)
       started++
     }
-  }, [loadTexture, evictIfNeeded])
+  }, [loadTexture, evictIfNeeded, isUnavailable])
 
   processQueueRef.current = processQueue
 
@@ -165,11 +190,10 @@ export function useTextureLoader(): TextureLoader {
       if (destroyed.current) return
       processQueueRef.current()
       if (loadQueueMap.current.size > 0) schedulePump()
-    }, 0)
+    }, RETRY_BACKOFF_MS / 4)
   }, [])
 
   const requestLoad = useCallback((url: string, priority: number) => {
-    // Already have it, loading it, or known to be broken
     if (textureCache.current.has(url)) return
     if (loadingSet.current.has(url)) return
     if (failedSet.current.has(url)) return
@@ -201,14 +225,15 @@ export function useTextureLoader(): TextureLoader {
   const destroy = useCallback(() => {
     destroyed.current = true
     onTextureLoaded.current = null
-    for (const [url, texture] of textureCache.current) {
-      texture.destroy(true)
+    for (const url of textureCache.current.keys()) {
       Assets.unload(url).catch(() => {})
     }
     textureCache.current.clear()
-    lastUsedFrame.current.clear()
+    lastUsedAt.current.clear()
     loadQueueMap.current.clear()
     failedSet.current.clear()
+    attempts.current.clear()
+    retryAfter.current.clear()
     loadingSet.current.clear()
   }, [])
 
