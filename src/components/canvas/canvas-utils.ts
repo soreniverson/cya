@@ -21,11 +21,18 @@ export const LOD = {
   LOAD_MID_RES: 0.5,         // Above this: also request mid-res images
 } as const
 
-// Visible card limits (scales with zoom to keep GPU load constant)
-export const VISIBLE_CARDS = {
-  MAX_ZOOMED_OUT: 500,       // At minimum zoom: many small thumbs
-  MAX_ZOOMED_IN: 50,         // At maximum zoom: fewer large mid-res images
-} as const
+// Safety ceiling on how many cards may be rendered at once.
+//
+// This used to be a fixed 500 interpolated by zoom, with no reference to the
+// viewport. Anything past the cap is dropped from the visible set entirely, so
+// it is never even requested - on a 1930x1200 window that silently blanked
+// 17-193 tiles, and ~575 at 2560x1440, while the loader correctly reported
+// nothing queued and nothing failed. The real limit is how many cells actually
+// fit on screen, computed per frame below; this only guards a pathological
+// viewport/zoom combination. Raising it costs draw calls but not texture
+// memory: the grid tiles the same 964 concepts, so unique textures are bounded
+// at 964 thumbs + 964 mid however many cards are on screen.
+export const MAX_VISIBLE_CARDS_CEILING = 2600
 
 // Momentum physics
 export const FRICTION = 0.85 // More friction = stops faster
@@ -128,16 +135,26 @@ export function getMidUrl(concept: CanvasConcept): string {
 }
 
 /**
- * Calculate max visible cards based on zoom level
- * More cards when zoomed out (small thumbs), fewer when zoomed in (larger mid-res)
+ * How many cards may be rendered for this viewport.
+ *
+ * Derived from the cells that actually fit on screen, so a large window gets
+ * everything it can see. Zoom is handled implicitly: zoomed in, cells are
+ * larger and fewer fit, which is what kept mid-res texture counts down before.
  */
-export function getMaxVisibleCards(zoom: number): number {
-  const t = (zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)
-  const clamped = Math.max(0, Math.min(1, t))
-  return Math.round(
-    VISIBLE_CARDS.MAX_ZOOMED_OUT +
-    (VISIBLE_CARDS.MAX_ZOOMED_IN - VISIBLE_CARDS.MAX_ZOOMED_OUT) * clamped
-  )
+export function getMaxVisibleCards(
+  zoom: number,
+  viewportWidth: number,
+  viewportHeight: number
+): number {
+  const cellScreenSize = CELL_SIZE * zoom
+  if (!(cellScreenSize > 0) || !(viewportWidth > 0) || !(viewportHeight > 0)) {
+    return MAX_VISIBLE_CARDS_CEILING
+  }
+  // +3 on each axis covers the one-cell margin getVisibleCards adds plus
+  // partially-visible cells at both edges.
+  const cols = Math.ceil(viewportWidth / cellScreenSize) + 3
+  const rows = Math.ceil(viewportHeight / cellScreenSize) + 3
+  return Math.min(cols * rows, MAX_VISIBLE_CARDS_CEILING)
 }
 
 export interface GridConfig {
@@ -411,7 +428,7 @@ export function getVisibleCards(
   }
 
   // Dynamic cap: more cards zoomed out, fewer zoomed in
-  const maxCards = getMaxVisibleCards(viewport.zoom)
+  const maxCards = getMaxVisibleCards(viewport.zoom, viewport.width, viewport.height)
   if (visible.length > maxCards) {
     visible.sort((a, b) => a.distanceFromCenter - b.distanceFromCenter)
     return visible.slice(0, maxCards)

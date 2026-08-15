@@ -4,9 +4,9 @@ import { useRef, useCallback } from 'react'
 import { Texture, Assets } from 'pixi.js'
 import { MAX_CONCURRENT_LOADS, getCategoryColor } from './canvas-utils'
 
-// Bound GPU memory. Only engages in a long session that has panned across a
-// large part of the archive; a full viewport is at most ~500 textures.
-const MAX_CACHED_TEXTURES = 900
+// Bound GPU memory. Above the 1,928 unique textures the archive can produce
+// (964 thumbs + 964 mid), so it never evicts something still on screen.
+const MAX_CACHED_TEXTURES = 2000
 
 // A texture is only a candidate once nothing has drawn it for this long.
 // Deliberately wall-clock, not a frame or tick count: processQueue is driven by
