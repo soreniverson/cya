@@ -78,7 +78,7 @@ const concepts: CanvasConcept[] = Array.from({ length: CONCEPT_COUNT }, (_, i) =
   caption: null,
   image_url: `orig-${i}.png`,
   thumbnail_url: `thumbnails/thumb-${i}.jpg`,
-  mid_url: `mid/mid-${i}.jpg`,
+  mid_url: `mid/mid-${i}.jpg`, atlas_slot: i,
   category: i % 5 === 0 ? `cat-${i % 60}` : null,
   date_posted: '2025-01-01',
 }))

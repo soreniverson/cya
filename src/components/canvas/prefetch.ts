@@ -176,22 +176,25 @@ export function buildPrefetchPlan(
     if (!concept) return
     const priority = priorityOf(tier, distSq)
 
-    const url = getThumbUrl(concept)
-    const existing = at.get(url)
-    if (existing === undefined) {
-      at.set(url, out.length)
-      out.push({ url, priority, tier })
-    } else if (priority < out[existing].priority) {
-      // Seen again in a better tier or nearer the centre: upgrade in place
-      // rather than emitting the URL twice.
-      out[existing].priority = priority
-      out[existing].tier = tier
+    // Thumbnails live in the atlas; only concepts without a slot (a brand new
+    // upload, before the atlas is rebuilt) still need an individual request.
+    if (concept.atlas_slot === null || concept.atlas_slot === undefined) {
+      const url = getThumbUrl(concept)
+      const existing = at.get(url)
+      if (existing === undefined) {
+        at.set(url, out.length)
+        out.push({ url, priority, tier })
+      } else if (priority < out[existing].priority) {
+        out[existing].priority = priority
+        out[existing].tier = tier
+      }
     }
 
-    // Mid-res only for tiers that are, or are about to be, on screen.
+    // Mid-res only for tiers that are, or are about to be, on screen. This is
+    // now the only per-URL image work the canvas does.
     if (wantMid && tier <= TIER.PREDICTED) {
       const midUrl = getMidUrl(concept)
-      if (midUrl !== url) {
+      if (midUrl) {
         const midAt = at.get(midUrl)
         if (midAt === undefined) {
           at.set(midUrl, out.length)
@@ -255,11 +258,9 @@ export function buildPrefetchPlan(
   // every subsequent pan and zoom is a cache hit. Eviction is not wasted work
   // either - the bytes stay in the browser's HTTP cache, so re-decoding an
   // evicted texture costs ~1.4 ms instead of a ~220 ms round trip.
-  if (depth === 'full') {
-    for (let i = 0; i < concepts.length && out.length < TIER_CAP[TIER.BACKGROUND]; i++) {
-      add(i, TIER_STRIDE - 1, TIER.BACKGROUND)
-    }
-  }
+  // No background tier any more. It existed to pull all 964 thumbnails ahead of
+  // time; the atlas delivers them in one request, so the only per-URL work left
+  // is mid-res for cards the user has actually zoomed into.
 
   return out
 }

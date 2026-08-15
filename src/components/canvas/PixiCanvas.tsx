@@ -6,6 +6,7 @@ import type { CanvasConcept } from '@/lib/types'
 import { useViewport } from './useViewport'
 import { useTextureLoader } from './useTextureLoader'
 import { useSpritePool } from './useSpritePool'
+import { createAtlasStore } from './atlas'
 import { getThumbUrl } from './canvas-utils'
 import {
   computeGridConfig,
@@ -62,6 +63,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const viewport = useViewport(gridConfig)
     const textureLoader = useTextureLoader()
     const spritePool = useSpritePool()
+    // Stable for the life of the component; creating it touches nothing global.
+    const atlas = useMemo(() => createAtlasStore(), [])
 
     // Expose methods to parent
     useImperativeHandle(ref, () => ({
@@ -93,19 +96,21 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         hoveredIndexRef.current,
         concepts,
         isClusterMode,
-        gridConfig
+        gridConfig,
+        atlas
       )
 
       // Coverage of what is on screen right now, for diagnostics/benchmarks.
       let ready = 0
       for (const card of visibleCardsCache) {
-        if (card.concept && textureLoader.getTexture(getThumbUrl(card.concept))) ready++
+        if (!card.concept) continue
+        if (atlas.get(card.concept.atlas_slot) || textureLoader.getTexture(getThumbUrl(card.concept))) ready++
       }
       textureLoader.reportCoverage({ visibleCards: visibleCardsCache.length, visibleReady: ready })
 
       app.render()
       return stillAnimating
-    }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isClusterMode])
+    }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isClusterMode, atlas])
 
     // Animation loop with throttled zoom callback
     const tick = useCallback(() => {
@@ -189,6 +194,12 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         appRef.current = app
 
+        // Preview atlas first, full atlas behind it. Both repaint on arrival.
+        atlas.load(() => {
+          lastViewportHash = ''
+          if (appRef.current) { render(true); ensureRunning() }
+        })
+
         // Set initial size
         viewport.setSize(app.screen.width, app.screen.height)
 
@@ -219,6 +230,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         if (appRef.current) {
           spritePool.cleanup()
+          atlas.destroy()
           textureLoader.destroy()
           appRef.current.destroy(true)
           appRef.current = null
@@ -246,6 +258,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
     useEffect(() => {
       textureLoader.setOnTextureLoaded(() => ensureRunning())
+      textureLoader.setAtlasStats(() => atlas.stats())
 
       // While the camera is moving, re-plan often enough to track it. While it
       // is still, this is a cheap no-op that also covers the hidden-tab case.
@@ -262,9 +275,10 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       return () => {
         window.clearInterval(planTimer)
         textureLoader.setOnTextureLoaded(null)
+        textureLoader.setAtlasStats(null)
         document.removeEventListener('visibilitychange', handleVisibility)
       }
-    }, [textureLoader, ensureRunning, render])
+    }, [textureLoader, ensureRunning, render, atlas])
 
     // Handle resize
     useEffect(() => {

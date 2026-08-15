@@ -81,6 +81,8 @@ export interface CoverageSnapshot {
 }
 
 export interface TextureLoader {
+  /** Lets __cyaPerf report atlas state alongside loader state. */
+  setAtlasStats: (fn: (() => unknown) | null) => void
   getTexture: (url: string) => Texture | null
   /** Feed the loader the camera state. This is what drives all fetching. */
   setViewport: (
@@ -131,9 +133,16 @@ export function useTextureLoader(): TextureLoader {
   const coverage = useRef<CoverageSnapshot>({ visibleCards: 0, visibleReady: 0 })
   const lastPlanCount = useRef(0)
   const predictedReady = useRef(0)
+  // Coverage milestones measured from navigation start, for cold-load numbers.
+  const coldMarks = useRef<Record<string, number>>({})
+  const atlasStats = useRef<(() => unknown) | null>(null)
 
   const setOnTextureLoaded = useCallback((cb: (() => void) | null) => {
     onLoaded.current = cb
+  }, [])
+
+  const setAtlasStats = useCallback((fn: (() => unknown) | null) => {
+    atlasStats.current = fn
   }, [])
 
   const getTexture = useCallback((url: string): Texture | null => {
@@ -208,6 +217,16 @@ export function useTextureLoader(): TextureLoader {
     const { visibleCards, visibleReady } = coverage.current
     if (visibleCards === 0) return
     const pct = (visibleReady / visibleCards) * 100
+
+    // Absolute milestones from navigation start - the cold-load metric.
+    const t = Math.round(performance.now())
+    for (const m of [50, 90, 98, 100]) {
+      const key = `T${m}`
+      if (coldMarks.current[key] === undefined && pct >= m) coldMarks.current[key] = t
+    }
+    if (coldMarks.current.firstPixels === undefined && visibleReady > 0) {
+      coldMarks.current.firstPixels = t
+    }
     const since = Date.now() - lastViewportChange.current
     if (firstFrameCoverage.current === null) firstFrameCoverage.current = pct
     if (timeTo98.current === null && pct >= 98) timeTo98.current = since
@@ -457,6 +476,8 @@ export function useTextureLoader(): TextureLoader {
         timeTo98AfterLastViewportChange: timeTo98.current,
         timeTo100AfterLastViewportChange: timeTo100.current,
         permanentlyFailed: failed.current.size,
+        coldLoad: { ...coldMarks.current },
+        atlas: atlasStats.current ? atlasStats.current() : null,
       }
     }
     ;(window as unknown as Record<string, unknown>).__cyaMarkViewportChange = () => {
@@ -468,6 +489,7 @@ export function useTextureLoader(): TextureLoader {
   }
 
   return {
+    setAtlasStats,
     getTexture,
     setViewport,
     requestLoad,

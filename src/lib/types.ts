@@ -4,7 +4,8 @@ export interface Concept {
   title: string
   caption: string | null
   image_url: string
-  thumbnail_url: string | null  // ~300px wide for zoomed-out canvas
+  thumbnail_url: string | null  // ~150px, packed into the atlas
+  atlas_slot: number | null     // position in the thumbnail atlas
   mid_url: string | null        // ~800px wide for zoomed-in canvas
   image_width: number
   image_height: number
@@ -29,6 +30,7 @@ export type CanvasConcept = Pick<
   | 'caption'
   | 'image_url'
   | 'thumbnail_url'
+  | 'atlas_slot'
   | 'mid_url'
   | 'category'
   | 'date_posted'

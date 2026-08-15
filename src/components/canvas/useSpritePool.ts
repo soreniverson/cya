@@ -3,6 +3,7 @@
 import { useRef, useCallback } from 'react'
 import { Container, Sprite, Texture, Graphics, Application } from 'pixi.js'
 import type { TextureLoader } from './useTextureLoader'
+import type { AtlasStore } from './atlas'
 import type { CanvasConcept } from '@/lib/types'
 import {
   type VisibleCard,
@@ -61,7 +62,8 @@ export interface SpritePool {
     hoveredIndex: number | null,
     concepts: CanvasConcept[],
     isClusterMode: boolean,
-    gridConfig: GridConfig
+    gridConfig: GridConfig,
+    atlas: AtlasStore
   ) => boolean // Returns true if still animating
   getContainer: () => Container
   cleanup: () => void
@@ -232,7 +234,8 @@ export function useSpritePool(): SpritePool {
     hoveredIndex: number | null,
     concepts: CanvasConcept[],
     isClusterMode: boolean,
-    gridConfig: GridConfig
+    gridConfig: GridConfig,
+    atlas: AtlasStore
   ): boolean => {
     const container = getContainer()
     let isAnimating = false
@@ -412,12 +415,15 @@ export function useSpritePool(): SpritePool {
       // Rule: Always load thumb first, then mid when zoomed in. Never downgrade.
       const shouldShowImage = showImages && card.currentAlpha > 0.1 && concept
       if (shouldShowImage) {
-        const thumbUrl = getThumbUrl(concept)
         const midUrl = getMidUrl(concept)
         const wantMid = viewport.zoom >= LOD.LOAD_MID_RES
 
-        // Check what textures we have available
-        const thumbTexture = textureLoader.getTexture(thumbUrl)
+        // The thumbnail comes from the atlas - one already-decoded texture for
+        // the whole archive, no per-card request. Only concepts uploaded since
+        // the last atlas build fall back to an individual thumbnail fetch.
+        const atlasTexture = atlas.get(concept.atlas_slot)
+        const thumbUrl = getThumbUrl(concept)
+        const thumbTexture = atlasTexture ?? textureLoader.getTexture(thumbUrl)
         const midTexture = wantMid ? textureLoader.getTexture(midUrl) : null
 
         // Determine which texture to display (never downgrade from mid)
@@ -446,7 +452,8 @@ export function useSpritePool(): SpritePool {
             card.container.addChild(card.imageSprite)
           }
 
-          const isNewTexture = card.currentTextureUrl !== urlToUse
+          const isNewTexture = card.currentTextureUrl !== urlToUse ||
+            (card.imageSprite.texture !== textureToUse && urlToUse === thumbUrl)
           if (isNewTexture) {
             card.imageSprite.texture = textureToUse
 
@@ -492,7 +499,12 @@ export function useSpritePool(): SpritePool {
 
         // Request loads for images we don't have yet
         // Load thumb and mid in parallel when zoomed in (same priority)
-        if (!thumbTexture) {
+        // Only concepts the atlas does not cover are worth an individual
+        // request. Otherwise a card would fetch its own thumbnail during the
+        // brief window before the atlas arrives, which is exactly the request
+        // storm the atlas exists to remove.
+        const atlasCovers = concept.atlas_slot !== null && concept.atlas_slot !== undefined
+        if (!thumbTexture && !atlasCovers) {
           textureLoader.requestLoad(thumbUrl, distanceFromCenter)
         }
         // Request mid-res when zoomed in (same priority - load in parallel)
@@ -553,7 +565,9 @@ export function useSpritePool(): SpritePool {
         for (const [key, card] of activeCardsRef.current) {
           const c = concepts[card.conceptIndex % concepts.length]
           const url = c ? getThumbUrl(c) : null
-          const hasTexture = url ? !!textureLoader.getTexture(url) : false
+          const hasTexture = c
+            ? !!atlas.get(c.atlas_slot) || (url ? !!textureLoader.getTexture(url) : false)
+            : false
           const spriteVisible = !!card.imageSprite?.visible
           if (spriteVisible && card.imageAlpha > 0.9) {
             drawn++

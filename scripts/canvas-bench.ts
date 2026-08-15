@@ -32,7 +32,7 @@ const FRAME_MS = 16.67
 const CONCEPT_COUNT = 964
 const concepts: CanvasConcept[] = Array.from({ length: CONCEPT_COUNT }, (_, i) => ({
   id: `id-${i}`, slug: `s-${i}`, title: `T${i}`, caption: null,
-  image_url: `o-${i}.png`, thumbnail_url: `thumbnails/t-${i}.jpg`, mid_url: `mid/m-${i}.jpg`,
+  image_url: `o-${i}.png`, thumbnail_url: `thumbnails/t-${i}.jpg`, mid_url: `mid/m-${i}.jpg`, atlas_slot: i,
   category: null, date_posted: '2025-01-01',
 }))
 const cfg = computeGridConfig(CONCEPT_COUNT)

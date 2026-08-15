@@ -57,7 +57,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Every concept image is served from this cross-origin host, so warm
+        {/* The canvas needs these two files and nothing else to draw the whole
+            archive. Preloading them means the browser starts both during HTML
+            parse, in parallel with the JS, rather than after hydration and
+            WebGL init - which measured at t+1227ms before this. */}
+        <link rel="preload" as="image" href="/atlas/preview-v1.webp" fetchPriority="high" />
+        <link rel="preload" as="image" href="/atlas/thumbs-0-v1.webp" />
+        {/* Mid-res images are served from this cross-origin host, so warm
             the DNS + TCP + TLS handshake before the canvas asks for one. */}
         {STORAGE_ORIGIN && (
           <>

@@ -13,7 +13,7 @@ const PUBLIC_COLUMNS =
 // The canvas renders ~1000 rows into the initial payload, so it takes the
 // narrowest set that still covers the grid tiles and the lightbox.
 const CANVAS_COLUMNS =
-  'id, slug, title, caption, image_url, thumbnail_url, mid_url, category, date_posted'
+  'id, slug, title, caption, image_url, thumbnail_url, mid_url, category, date_posted, atlas_slot'
 
 /**
  * Public reads use the cookie-free client on purpose. Reaching for `cookies()`
