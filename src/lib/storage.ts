@@ -4,7 +4,9 @@
  * repeated string was 216 KB of the homepage payload — 40% of it — so the
  * server strips it and the client puts it back.
  */
-export const STORAGE_ORIGIN = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+import { SUPABASE_URL } from '@/lib/supabase/env'
+
+export const STORAGE_ORIGIN = SUPABASE_URL
 export const STORAGE_PREFIX = `${STORAGE_ORIGIN}/storage/v1/object/public/concepts/`
 
 /** Full URL -> bare object path. Leaves anything unrecognised untouched. */
