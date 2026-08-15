@@ -18,6 +18,7 @@ import {
   DEFAULT_ZOOM,
   ZOOM_LERP_SPEED,
 } from './canvas-utils'
+import type { Motion } from './prefetch'
 
 interface DragSample {
   x: number
@@ -60,6 +61,9 @@ export interface ViewportState {
   // Animation loop
   tick: () => boolean // Returns true if still animating
   isIdle: () => boolean
+
+  /** Camera motion, so the loader can prefetch where the camera is heading. */
+  getMotion: () => Motion
 }
 
 const ZOOM_WHEEL_FACTOR = 1.1
@@ -326,8 +330,43 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
     return !isDraggingRef.current && !isPinchingRef.current && !animationRef.current && speed <= VELOCITY_STOP_THRESHOLD
   }, [])
 
+  const getMotion = useCallback((): Motion => {
+    const vel = velocityRef.current
+    const zoom = zoomRef.current || 1
+    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y)
+    const anim = animationRef.current
+    const zoomSettling = Math.abs(targetZoomRef.current - zoom) > 0.005
+
+    // Pan velocity is tracked in screen px/frame; the camera integrates it as
+    // pan += v / zoom, so world-space travel is v / zoom.
+    let vx = -0 + vel.x / zoom
+    let vy = vel.y / zoom
+
+    // A scripted move (shuffle/recenter) has a known destination, which is a
+    // far better prediction than velocity.
+    if (anim) {
+      const remaining = Math.max(1, anim.duration - (performance.now() - anim.startTime))
+      const frames = remaining / 16.67
+      vx = (anim.endPan.x - panRef.current.x) / frames
+      vy = (anim.endPan.y - panRef.current.y) / frames
+    }
+
+    return {
+      vx,
+      vy,
+      targetZoom: targetZoomRef.current,
+      isMoving:
+        isDraggingRef.current ||
+        isPinchingRef.current ||
+        anim !== null ||
+        zoomSettling ||
+        speed > VELOCITY_STOP_THRESHOLD,
+    }
+  }, [])
+
   return {
     getViewport,
+    getMotion,
     setSize,
     onDragStart,
     onDragMove,

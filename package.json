@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "eslint --max-warnings 0 && tsx scripts/canvas-matrix-test.ts && next build",
+    "build": "eslint --max-warnings 0 && npm run test:canvas && next build",
     "start": "next start",
     "lint": "eslint",
     "batch-upload": "tsx scripts/batch-upload.ts",
-    "test:canvas": "tsx scripts/canvas-matrix-test.ts"
+    "test:canvas": "tsx scripts/canvas-matrix-test.ts && tsx scripts/canvas-loader-test.ts",
+    "bench:canvas": "tsx scripts/canvas-bench.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

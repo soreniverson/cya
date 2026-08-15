@@ -6,6 +6,7 @@ import type { CanvasConcept } from '@/lib/types'
 import { useViewport } from './useViewport'
 import { useTextureLoader } from './useTextureLoader'
 import { useSpritePool } from './useSpritePool'
+import { getThumbUrl } from './canvas-utils'
 import {
   computeGridConfig,
   getVisibleCards,
@@ -52,6 +53,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const lastZoomPercentRef = useRef<number>(-1)
     const zoomThrottleRef = useRef<number>(0)
     const tickRef = useRef<() => void>(() => {})
+    const syncLoaderRef = useRef<(markChange?: boolean) => void>(() => {})
     // Set in the init effect - calling Date.now() during render is impure.
     const mountTimeRef = useRef(0) // Track mount time for click prevention
 
@@ -63,9 +65,9 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
     // Expose methods to parent
     useImperativeHandle(ref, () => ({
-      shuffle: viewport.shuffle,
-      recenter: viewport.recenter,
-      setZoom: viewport.setZoom,
+      shuffle: () => { viewport.shuffle(); syncLoaderRef.current(true) },
+      recenter: () => { viewport.recenter(); syncLoaderRef.current(true) },
+      setZoom: (z: number) => { viewport.setZoom(z); syncLoaderRef.current(true) },
       getZoomPercent: () => zoomToPercent(viewport.getViewport().zoom),
     }), [viewport])
 
@@ -93,6 +95,13 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         isClusterMode,
         gridConfig
       )
+
+      // Coverage of what is on screen right now, for diagnostics/benchmarks.
+      let ready = 0
+      for (const card of visibleCardsCache) {
+        if (card.concept && textureLoader.getTexture(getThumbUrl(card.concept))) ready++
+      }
+      textureLoader.reportCoverage({ visibleCards: visibleCardsCache.length, visibleReady: ready })
 
       app.render()
       return stillAnimating
@@ -185,6 +194,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         // Initial render and start the animation loop to load images
         lastViewportHash = '' // Force recalc
+        syncLoaderRef.current(true)
         render(true)
 
         // Start animation loop to process image loading queue
@@ -216,32 +226,41 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Textures now finish loading independently of the render loop (including
-    // while the tab is in the background), so a completed load has to ask for a
-    // repaint itself - otherwise it sits in the cache, undrawn.
+    // Feed the camera to the loader. This is the whole prefetch trigger, and it
+    // is deliberately independent of requestAnimationFrame: the loader must
+    // keep working while the tab is hidden, while the canvas is idle, and
+    // during the frames of an interaction rather than only after it settles.
+    const syncLoader = useCallback((markChange = false) => {
+      const vp = viewport.getViewport()
+      if (!(vp.width > 0) || !(vp.height > 0)) return
+      if (markChange) {
+        const mark = (window as unknown as Record<string, unknown>).__cyaMarkViewportChange
+        if (typeof mark === 'function') (mark as () => void)()
+      }
+      textureLoader.setViewport(vp, viewport.getMotion(), gridConfig, concepts)
+    }, [viewport, textureLoader, gridConfig, concepts])
+
+    useEffect(() => {
+      syncLoaderRef.current = syncLoader
+    }, [syncLoader])
+
     useEffect(() => {
       textureLoader.setOnTextureLoaded(() => ensureRunning())
 
-      // Draining the queue was decoupled from requestAnimationFrame, but
-      // *filling* it still is not: requestLoad is only called from
-      // spritePool.update, which runs inside the render loop. So while rAF is
-      // halted, anything already queued keeps downloading but newly-exposed
-      // cards are never asked for. This ticks the render path on a timer so the
-      // visible set keeps being evaluated even when rAF is not running.
-      const keepAlive = window.setInterval(() => {
-        if (document.visibilityState !== 'visible' && appRef.current) {
-          render(true)
-        }
-      }, 1000)
+      // While the camera is moving, re-plan often enough to track it. While it
+      // is still, this is a cheap no-op that also covers the hidden-tab case.
+      const planTimer = window.setInterval(() => {
+        if (!appRef.current) return
+        syncLoaderRef.current(false)
+        if (document.visibilityState !== 'visible') render(true)
+      }, 120)
 
       const handleVisibility = () => {
-        // requestAnimationFrame is halted while hidden. On return, restart the
-        // loop so everything fetched in the background gets painted.
         if (document.visibilityState === 'visible') ensureRunning()
       }
       document.addEventListener('visibilitychange', handleVisibility)
       return () => {
-        window.clearInterval(keepAlive)
+        window.clearInterval(planTimer)
         textureLoader.setOnTextureLoaded(null)
         document.removeEventListener('visibilitychange', handleVisibility)
       }
@@ -255,6 +274,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         viewport.setSize(app.screen.width, app.screen.height)
         lastViewportHash = '' // Force recalc
+        syncLoaderRef.current(true)
         render(true)
       }
 
@@ -274,6 +294,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         hasDraggedRef.current = false
         viewport.onDragStart(e.clientX, e.clientY)
         ensureRunning()
+        syncLoaderRef.current(true)
 
         container.setPointerCapture(e.pointerId)
       }
@@ -286,6 +307,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         if (isDraggingRef.current) {
           hasDraggedRef.current = true
           viewport.onDragMove(e.clientX, e.clientY)
+          syncLoaderRef.current(false)
           container.style.cursor = 'grabbing'
           return
         }
@@ -311,6 +333,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         if (isDraggingRef.current) {
           isDraggingRef.current = false
           viewport.onDragEnd()
+          syncLoaderRef.current(true)
 
           // Only allow clicks after 500ms from mount (prevents accidental clicks on page load)
           const timeSinceMount = Date.now() - mountTimeRef.current
@@ -340,6 +363,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         viewport.onWheel(e.deltaY, x, y)
         ensureRunning()
+        syncLoaderRef.current(true)
       }
 
       // Touch handlers
@@ -367,6 +391,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
           lastTouchDistance = getTouchDistance(e.touches)
           viewport.onPinchStart(lastTouchDistance)
           ensureRunning()
+          syncLoaderRef.current(true)
         }
       }
 
@@ -376,6 +401,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
           const distance = getTouchDistance(e.touches)
           const center = getTouchCenter(e.touches)
           viewport.onPinchMove(distance, center.x, center.y)
+          syncLoaderRef.current(false)
         }
       }
 
