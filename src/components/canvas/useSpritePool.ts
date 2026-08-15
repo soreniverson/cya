@@ -4,6 +4,7 @@ import { useRef, useCallback } from 'react'
 import { Container, Sprite, Texture, Graphics, Application } from 'pixi.js'
 import type { TextureLoader } from './useTextureLoader'
 import type { AtlasStore } from './atlas'
+import { telemetry } from './startup-telemetry'
 import type { CanvasConcept } from '@/lib/types'
 import {
   type VisibleCard,
@@ -455,6 +456,7 @@ export function useSpritePool(): SpritePool {
           const isNewTexture = card.currentTextureUrl !== urlToUse ||
             (card.imageSprite.texture !== textureToUse && urlToUse === thumbUrl)
           if (isNewTexture) {
+            telemetry.count('spriteTextureSwaps')
             card.imageSprite.texture = textureToUse
 
             // Cover fit
@@ -472,10 +474,15 @@ export function useSpritePool(): SpritePool {
             }
 
             card.currentTextureUrl = urlToUse
-            // Only reset fade if this is the first image (not an upgrade)
-            if (!card.hasThumb || urlToUse === thumbUrl) {
-              card.imageAlpha = 0
-            }
+            // Deliberately no alpha reset here.
+            //
+            // acquireCard already starts a fresh card at imageAlpha 0, so a
+            // card showing its first image still fades in. Every other texture
+            // change is an *upgrade* of the same picture - preview atlas to
+            // full atlas, or thumb to mid - and resetting alpha for those made
+            // all 450 visible cards drop to transparent and fade back in the
+            // instant the full atlas decoded. Measured: 450 alpha resets inside
+            // a 1 ms window at t+1292 ms. That was the startup flicker.
           }
 
           // Animate image fade-in

@@ -3,6 +3,7 @@
 import { useRef, useCallback } from 'react'
 import { Texture, ImageSource } from 'pixi.js'
 import { getCategoryColor, type GridConfig, type Viewport } from './canvas-utils'
+import { telemetry } from './startup-telemetry'
 import {
   buildPrefetchPlan,
   depthFromConnection,
@@ -477,6 +478,7 @@ export function useTextureLoader(): TextureLoader {
         timeTo100AfterLastViewportChange: timeTo100.current,
         permanentlyFailed: failed.current.size,
         coldLoad: { ...coldMarks.current },
+        startup: telemetry.snapshot(),
         atlas: atlasStats.current ? atlasStats.current() : null,
       }
     }

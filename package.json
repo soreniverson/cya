@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "batch-upload": "tsx scripts/batch-upload.ts",
-    "test:canvas": "tsx scripts/canvas-matrix-test.ts && tsx scripts/canvas-loader-test.ts",
+    "test:canvas": "tsx scripts/canvas-matrix-test.ts && tsx scripts/canvas-loader-test.ts && tsx scripts/startup-lifecycle-test.ts",
     "bench:canvas": "tsx scripts/canvas-bench.ts"
   },
   "dependencies": {

@@ -1,6 +1,7 @@
 'use client'
 
 import { Texture, ImageSource, Rectangle } from 'pixi.js'
+import { telemetry } from './startup-telemetry'
 
 /**
  * Thumbnail atlases.
@@ -48,6 +49,11 @@ interface LoadedAtlas {
 export interface AtlasStore {
   /** Best available texture for a slot, or null if no atlas has arrived yet. */
   get: (slot: number | null | undefined) => Texture | null
+  /**
+   * Force the GPU upload for any decoded-but-not-yet-drawn atlas, so the frame
+   * that first shows it does not also pay for a 62 MB texture upload.
+   */
+  warmGpu: (renderer: { texture: { initSource: (s: unknown) => void } }) => void
   /** Which level a slot currently resolves to, for upgrade decisions. */
   levelOf: (slot: number | null | undefined) => AtlasLevel | null
   load: (onReady: (level: AtlasLevel) => void) => void
@@ -87,13 +93,16 @@ export function createAtlasStore(): AtlasStore {
     label: string
   ): Promise<LoadedAtlas | null> => {
     const t0 = performance.now()
+    telemetry.mark(label === 'preview' ? 'previewFetchStart' : 'fullFetchStart')
     try {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
+      telemetry.mark(label === 'preview' ? 'previewFetched' : 'fullFetched')
       timings[`${label}NetworkMs`] = Math.round(performance.now() - t0)
       const t1 = performance.now()
       const bitmap = await createImageBitmap(blob)
+      telemetry.mark(label === 'preview' ? 'previewDecoded' : 'fullDecoded')
       timings[`${label}DecodeMs`] = Math.round(performance.now() - t1)
       if (destroyed) {
         bitmap.close()
@@ -137,6 +146,19 @@ export function createAtlasStore(): AtlasStore {
     return null
   }
 
+  const warmed = new Set<LoadedAtlas>()
+  const warmGpu = (renderer: { texture: { initSource: (s: unknown) => void } }) => {
+    for (const a of [preview, ...full.values()]) {
+      if (!a || warmed.has(a)) continue
+      try {
+        renderer.texture.initSource(a.base.source)
+        warmed.add(a)
+      } catch {
+        // Upload will simply happen lazily on first draw.
+      }
+    }
+  }
+
   const levelOf = (slot: number | null | undefined): AtlasLevel | null => {
     if (slot === null || slot === undefined || slot < 0) return null
     if (full.has(Math.floor(slot / ATLAS.slotsPerAtlas))) return 'full'
@@ -150,6 +172,7 @@ export function createAtlasStore(): AtlasStore {
       if (!a) continue
       for (const t of a.frames.values()) t.destroy(false) // frames share the base source
       a.frames.clear()
+      telemetry.count('textureDestroys')
       a.base.destroy(true)
     }
     preview = null
@@ -171,5 +194,5 @@ export function createAtlasStore(): AtlasStore {
     }
   }
 
-  return { get, levelOf, load, destroy, stats }
+  return { get, warmGpu, levelOf, load, destroy, stats }
 }

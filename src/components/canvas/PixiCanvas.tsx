@@ -7,6 +7,7 @@ import { useViewport } from './useViewport'
 import { useTextureLoader } from './useTextureLoader'
 import { useSpritePool } from './useSpritePool'
 import { createAtlasStore } from './atlas'
+import { telemetry } from './startup-telemetry'
 import { getThumbUrl } from './canvas-utils'
 import {
   computeGridConfig,
@@ -88,6 +89,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         lastViewportHash = hash
       }
 
+      telemetry.observe()
       const stillAnimating = spritePool.update(
         visibleCardsCache,
         vp,
@@ -107,8 +109,10 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         if (atlas.get(card.concept.atlas_slot) || textureLoader.getTexture(getThumbUrl(card.concept))) ready++
       }
       textureLoader.reportCoverage({ visibleCards: visibleCardsCache.length, visibleReady: ready })
+      telemetry.frame(ready, visibleCardsCache.length)
 
       app.render()
+      telemetry.mark('firstPixiFrame')
       return stillAnimating
     }, [viewport, gridConfig, concepts, spritePool, textureLoader, filteredIndices, isClusterMode, atlas])
 
@@ -166,9 +170,34 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     // and app.init() plus hydration measured ~2.2s on production - during which
     // the atlas bytes were already sitting in the HTTP cache, unused.
     useEffect(() => {
-      atlas.load(() => {
-        lastViewportHash = ''
-        if (appRef.current) { render(true); ensureRunning() }
+      atlas.load((level) => {
+        const promote = () => {
+          const app = appRef.current
+          if (!app) return
+          const isFull = level === 'full'
+          if (isFull) telemetry.mark('fullSwapStart')
+          // Upload before the swap frame, not during it. The full atlas is
+          // 4096x3968 (62 MB on the GPU) and measured a 110 ms upload; letting
+          // that happen lazily inside the frame that first draws it would put
+          // the whole upload on the critical path of a visible frame.
+          atlas.warmGpu(app.renderer as unknown as { texture: { initSource: (s: unknown) => void } })
+          if (isFull) telemetry.mark('fullGpuReady')
+          lastViewportHash = ''
+          render(true)
+          if (isFull) telemetry.mark('fullSwapEnd')
+          ensureRunning()
+        }
+
+        // The preview is what makes the grid appear, so it goes up immediately.
+        // The full atlas is a quality upgrade and must never interrupt a
+        // gesture: its 110 ms upload waits for the main thread to be idle.
+        if (level === 'preview') {
+          promote()
+        } else if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(promote, { timeout: 2000 })
+        } else {
+          setTimeout(promote, 0)
+        }
       })
     }, [atlas, render, ensureRunning])
 
@@ -180,6 +209,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       let mounted = true
 
       const initApp = async () => {
+        telemetry.mark('pixiInitStart')
         const app = new Application()
 
         await app.init({
@@ -196,7 +226,10 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
           return
         }
 
+        telemetry.mark('pixiReady')
         container.appendChild(app.canvas)
+        telemetry.mark('canvasInserted')
+        telemetry.count('canvasRemounts')
 
         // Initialize sprite pool with app reference
         spritePool.init(app)
@@ -290,6 +323,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         const app = appRef.current
         if (!app) return
 
+        telemetry.count('rendererResizes')
+        telemetry.reset('rendererResize', `${app.screen.width}x${app.screen.height}`)
         viewport.setSize(app.screen.width, app.screen.height)
         lastViewportHash = '' // Force recalc
         syncLoaderRef.current(true)
