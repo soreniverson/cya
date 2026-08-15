@@ -31,8 +31,11 @@ export const LOD = {
 // fit on screen, computed per frame below; this only guards a pathological
 // viewport/zoom combination. Raising it costs draw calls but not texture
 // memory: the grid tiles the same 964 concepts, so unique textures are bounded
-// at 964 thumbs + 964 mid however many cards are on screen.
-export const MAX_VISIBLE_CARDS_CEILING = 2600
+// at 964 thumbs + 964 mid however many cards are on screen. Sized to cover a
+// Pro Display XDR at native resolution and minimum zoom (4,982 on-screen
+// cells); below that the cap never binds, and not binding also skips the
+// distance sort, so a large display is cheaper than it was when truncated.
+export const MAX_VISIBLE_CARDS_CEILING = 6500
 
 // Momentum physics
 export const FRICTION = 0.85 // More friction = stops faster
