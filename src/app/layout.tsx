@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SITE_URL } from "@/lib/site";
+import { STORAGE_ORIGIN } from "@/lib/storage";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -55,6 +56,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Every concept image is served from this cross-origin host, so warm
+            the DNS + TCP + TLS handshake before the canvas asks for one. */}
+        {STORAGE_ORIGIN && (
+          <>
+            <link rel="preconnect" href={STORAGE_ORIGIN} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={STORAGE_ORIGIN} />
+          </>
+        )}
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >

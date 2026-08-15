@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { createStaticClient } from '@/lib/supabase/static'
+import { toStoragePath } from '@/lib/storage'
 import type { CanvasConcept, Concept, Category } from '@/lib/types'
 
 const PAGE_SIZE = 24
@@ -205,5 +206,13 @@ export const getAllConcepts = cache(async function getAllConcepts(): Promise<Can
     throw new Error(`Failed to load concepts: ${error.message}`)
   }
 
-  return (data ?? []) as unknown as CanvasConcept[]
+  // Every row goes into the initial page payload, so strip the storage prefix
+  // the three URL columns all share. The client reattaches it via
+  // fromStoragePath(). Worth ~216 KB across 964 concepts.
+  return ((data ?? []) as unknown as CanvasConcept[]).map((c) => ({
+    ...c,
+    image_url: toStoragePath(c.image_url) as string,
+    thumbnail_url: toStoragePath(c.thumbnail_url),
+    mid_url: toStoragePath(c.mid_url),
+  }))
 })

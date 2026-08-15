@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import type { CanvasConcept } from '@/lib/types'
 
 interface ArchiveIndexProps {
@@ -12,6 +11,11 @@ interface ArchiveIndexProps {
  *
  * `sr-only` keeps it clipped to a 1px box, so nothing here changes what a
  * sighted user sees - it exists purely for assistive tech and crawlers.
+ *
+ * Plain <a>, deliberately, not next/link. These links are never visible and
+ * never clicked by a sighted user, so the 964 Link components this used to
+ * mount were pure hydration and prefetch-observer overhead for markup that
+ * only ever needs to be read.
  */
 export function ArchiveIndex({ concepts }: ArchiveIndexProps) {
   return (
@@ -20,17 +24,17 @@ export function ArchiveIndex({ concepts }: ArchiveIndexProps) {
       <p>
         The archive is presented as an infinite canvas you can pan and zoom. Every
         concept is also listed below, and{' '}
-        <Link href="/directory">the searchable directory</Link> offers the same
+        <a href="/directory">the searchable directory</a> offers the same
         collection with search and category filters.
       </p>
       <nav aria-label="All concepts">
         <ul>
           {concepts.map((concept) => (
-            <li key={concept.id}>
-              <Link href={`/c/${concept.slug}`}>
+            <li key={concept.slug}>
+              <a href={`/c/${concept.slug}`}>
                 {concept.title}
                 {concept.category ? ` — ${concept.category}` : ''}
-              </Link>
+              </a>
             </li>
           ))}
         </ul>

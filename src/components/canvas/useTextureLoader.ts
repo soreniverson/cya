@@ -18,6 +18,8 @@ export interface TextureLoader {
   getCategoryColor: (category: string | null) => number
   clearQueue: () => void
   hasPendingLoads: () => boolean
+  /** Called after each texture resolves, so the canvas can schedule a repaint. */
+  setOnTextureLoaded: (cb: (() => void) | null) => void
   destroy: () => void
 }
 
@@ -32,6 +34,17 @@ export function useTextureLoader(): TextureLoader {
   const lastUsedFrame = useRef<Map<string, number>>(new Map())
   const activeLoads = useRef<number>(0)
   const frameCount = useRef<number>(0)
+  const onTextureLoaded = useRef<(() => void) | null>(null)
+  const destroyed = useRef(false)
+  // Set while a queue drain is already scheduled, so we schedule at most one.
+  const pumpScheduled = useRef(false)
+  // processQueue is defined below but referenced from loadTexture; a ref keeps
+  // the two mutually recursive without a declaration-order problem.
+  const processQueueRef = useRef<() => void>(() => {})
+
+  const setOnTextureLoaded = useCallback((cb: (() => void) | null) => {
+    onTextureLoaded.current = cb
+  }, [])
 
   const getTexture = useCallback((url: string): Texture | null => {
     const texture = textureCache.current.get(url)
@@ -54,6 +67,10 @@ export function useTextureLoader(): TextureLoader {
 
     try {
       const texture = await Assets.load<Texture>(url)
+      if (destroyed.current) {
+        texture?.destroy(true)
+        return
+      }
       textureCache.current.set(url, texture)
       lastUsedFrame.current.set(url, frameCount.current)
     } catch {
@@ -62,6 +79,13 @@ export function useTextureLoader(): TextureLoader {
     } finally {
       loadingSet.current.delete(url)
       activeLoads.current--
+      if (!destroyed.current) {
+        // Refill the pipeline immediately rather than waiting for the next
+        // animation frame. This is what keeps loading alive in a background
+        // tab, where requestAnimationFrame is halted entirely.
+        processQueueRef.current()
+        onTextureLoaded.current?.()
+      }
     }
   }, [])
 
@@ -97,22 +121,17 @@ export function useTextureLoader(): TextureLoader {
     // Cheap no-op until the cache is actually over budget.
     if (frameCount.current % 60 === 0) evictIfNeeded()
 
-    if (loadQueueMap.current.size === 0) return
+    const free = MAX_CONCURRENT_LOADS - activeLoads.current
+    if (loadQueueMap.current.size === 0 || free <= 0) return
 
-    // Convert to array and sort only when we need to process
-    // Only sort every 10 frames to reduce overhead
-    let toProcess: Array<[string, number]> | null = null
-    if (frameCount.current % 10 === 0 || activeLoads.current < MAX_CONCURRENT_LOADS) {
-      toProcess = Array.from(loadQueueMap.current.entries())
-      toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority
-    }
+    // Nearest-to-centre first. Sorting the queue is only worth it when there is
+    // actually a slot to fill, which the guard above already established.
+    const toProcess = Array.from(loadQueueMap.current.entries())
+    toProcess.sort((a, b) => a[1] - b[1]) // Sort by priority
 
-    if (!toProcess) return
-
-    // Process up to max concurrent loads
-    let processed = 0
+    let started = 0
     for (const [url] of toProcess) {
-      if (activeLoads.current >= MAX_CONCURRENT_LOADS || processed >= 6) break
+      if (started >= free) break
 
       if (
         textureCache.current.has(url) ||
@@ -125,9 +144,29 @@ export function useTextureLoader(): TextureLoader {
 
       loadQueueMap.current.delete(url)
       loadTexture(url)
-      processed++
+      started++
     }
   }, [loadTexture, evictIfNeeded])
+
+  processQueueRef.current = processQueue
+
+  /**
+   * Drain the queue on a timer as well as from the render loop.
+   *
+   * The render loop is not a reliable driver: browsers halt
+   * requestAnimationFrame in background tabs, so a canvas opened in a
+   * background tab used to fetch nothing at all until it was focused.
+   */
+  const schedulePump = useCallback(() => {
+    if (pumpScheduled.current || destroyed.current) return
+    pumpScheduled.current = true
+    setTimeout(() => {
+      pumpScheduled.current = false
+      if (destroyed.current) return
+      processQueueRef.current()
+      if (loadQueueMap.current.size > 0) schedulePump()
+    }, 0)
+  }, [])
 
   const requestLoad = useCallback((url: string, priority: number) => {
     // Already have it, loading it, or known to be broken
@@ -146,7 +185,8 @@ export function useTextureLoader(): TextureLoader {
     }
 
     loadQueueMap.current.set(url, priority)
-  }, [])
+    schedulePump()
+  }, [schedulePump])
 
   const clearQueue = useCallback(() => {
     loadQueueMap.current.clear()
@@ -159,6 +199,8 @@ export function useTextureLoader(): TextureLoader {
   // Release every texture on unmount so a client-side navigation away from the
   // canvas doesn't strand the whole archive in GPU memory.
   const destroy = useCallback(() => {
+    destroyed.current = true
+    onTextureLoaded.current = null
     for (const [url, texture] of textureCache.current) {
       texture.destroy(true)
       Assets.unload(url).catch(() => {})
@@ -177,6 +219,7 @@ export function useTextureLoader(): TextureLoader {
     getCategoryColor,
     clearQueue,
     hasPendingLoads,
+    setOnTextureLoaded,
     destroy,
   }
 }

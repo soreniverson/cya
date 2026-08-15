@@ -216,6 +216,23 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Textures now finish loading independently of the render loop (including
+    // while the tab is in the background), so a completed load has to ask for a
+    // repaint itself - otherwise it sits in the cache, undrawn.
+    useEffect(() => {
+      textureLoader.setOnTextureLoaded(() => ensureRunning())
+      const handleVisibility = () => {
+        // requestAnimationFrame is halted while hidden. On return, restart the
+        // loop so everything fetched in the background gets painted.
+        if (document.visibilityState === 'visible') ensureRunning()
+      }
+      document.addEventListener('visibilitychange', handleVisibility)
+      return () => {
+        textureLoader.setOnTextureLoaded(null)
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
+    }, [textureLoader, ensureRunning])
+
     // Handle resize
     useEffect(() => {
       const handleResize = () => {

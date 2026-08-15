@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { fromStoragePath } from '@/lib/storage'
 import type { CanvasConcept } from '@/lib/types'
 
 interface ConceptLightboxProps {
@@ -87,7 +88,7 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
           {concept && (
             <div className="relative aspect-square w-full bg-neutral-900">
               <Image
-                src={concept.mid_url || concept.image_url}
+                src={fromStoragePath(concept.mid_url || concept.image_url) as string}
                 alt={concept.title}
                 fill
                 className="object-contain"
