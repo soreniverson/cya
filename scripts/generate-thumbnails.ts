@@ -94,7 +94,7 @@ async function updateConceptThumbnail(id: string, thumbnailUrl: string): Promise
   }
 }
 
-async function processConceptBatch(concepts: Concept[], batchNum: number, totalBatches: number): Promise<{ success: number, failed: number }> {
+async function processConceptBatch(concepts: Concept[]): Promise<{ success: number, failed: number }> {
   let success = 0
   let failed = 0
 
@@ -190,7 +190,7 @@ async function main() {
 
   for (let i = 0; i < batches.length; i++) {
     console.log(`\n📦 Batch ${i + 1}/${batches.length}`)
-    const { success, failed } = await processConceptBatch(batches[i], i + 1, batches.length)
+    const { success, failed } = await processConceptBatch(batches[i])
     totalSuccess += success
     totalFailed += failed
   }

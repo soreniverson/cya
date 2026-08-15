@@ -12,13 +12,15 @@ import type { Metadata } from 'next'
 export const revalidate = 3600
 
 interface ConceptPageProps {
-  params: Promise<{ slug: string }>
+  // Catch-all: slugs are stored as `category/title`, so a concept URL has two
+  // path segments. A single [slug] segment 404s every categorised concept.
+  params: Promise<{ slug: string[] }>
   searchParams: Promise<{ category?: string }>
 }
 
 export async function generateMetadata({ params }: ConceptPageProps): Promise<Metadata> {
   const { slug } = await params
-  const concept = await getConceptBySlug(slug)
+  const concept = await getConceptBySlug(slug.join('/'))
 
   if (!concept) {
     return { title: 'Concept Not Found' }
@@ -33,9 +35,13 @@ export async function generateMetadata({ params }: ConceptPageProps): Promise<Me
   return {
     title: `${concept.title} | Can You Imagine`,
     description,
+    // Without this every concept page inherits the layout's canonical and tells
+    // crawlers it is the homepage.
+    alternates: { canonical: `/c/${concept.slug}` },
     openGraph: {
       title: concept.title,
       description,
+      url: `/c/${concept.slug}`,
       images: [{ url: ogImage, width: concept.image_width, height: concept.image_height }],
       type: 'article',
     },
@@ -64,13 +70,14 @@ export async function generateStaticParams() {
     .limit(100)
 
   return (data ?? []).map((concept) => ({
-    slug: concept.slug,
+    slug: concept.slug.split('/'),
   }))
 }
 
 export default async function ConceptPage({ params, searchParams }: ConceptPageProps) {
-  const { slug } = await params
+  const { slug: segments } = await params
   const { category } = await searchParams
+  const slug = segments.join('/')
 
   const concept = await getConceptBySlug(slug)
 

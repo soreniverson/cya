@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Dices, Info, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Category } from '@/lib/types'
@@ -14,8 +14,6 @@ interface CanvasControlsProps {
   zoomPercent: number
   onZoomChange: (percent: number) => void
   onRandomConcept: () => void
-  filteredCount: number
-  totalCount: number
 }
 
 export function CanvasControls({
@@ -25,18 +23,30 @@ export function CanvasControls({
   zoomPercent,
   onZoomChange,
   onRandomConcept,
-  filteredCount,
-  totalCount,
 }: CanvasControlsProps) {
   const [mode, setMode] = useState<ControlMode>('zoom')
   const [isInfoOpen, setIsInfoOpen] = useState(false)
   const [canUseShortcuts, setCanUseShortcuts] = useState(false)
+  const infoCloseRef = useRef<HTMLButtonElement>(null)
+  const infoOpenerRef = useRef<HTMLElement | null>(null)
 
   // Delay before keyboard shortcuts are active (prevents accidental triggers on page load)
   useEffect(() => {
     const timer = setTimeout(() => setCanUseShortcuts(true), 500)
     return () => clearTimeout(timer)
   }, [])
+
+  // Move focus into the dialog when it opens and hand it back when it closes,
+  // so keyboard users aren't left focused behind an open overlay.
+  useEffect(() => {
+    if (isInfoOpen) {
+      infoOpenerRef.current = document.activeElement as HTMLElement | null
+      infoCloseRef.current?.focus()
+    } else {
+      infoOpenerRef.current?.focus()
+      infoOpenerRef.current = null
+    }
+  }, [isInfoOpen])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -130,10 +140,13 @@ export function CanvasControls({
                   </FilterPill>
                 ))}
               </div>
-              <ControlButton onClick={() => {
-                setMode('zoom')
-                onCategoryChange(null)
-              }}>
+              <ControlButton
+                title="Close filters"
+                onClick={() => {
+                  setMode('zoom')
+                  onCategoryChange(null)
+                }}
+              >
                 <X className="size-[18px]" />
               </ControlButton>
             </div>
@@ -157,6 +170,7 @@ export function CanvasControls({
           <div className="flex-1 flex justify-center pointer-events-auto">
             {/* Zoom slider */}
             <div
+              inert={mode !== 'zoom'}
               className={cn(
                 "transition-all duration-150",
                 mode === 'zoom'
@@ -172,12 +186,14 @@ export function CanvasControls({
                   value={zoomPercent}
                   onChange={(e) => onZoomChange(Number(e.target.value))}
                   className="zoom-slider w-48"
+                  aria-label="Zoom level"
                 />
               </div>
             </div>
 
             {/* Filter pills */}
             <div
+              inert={mode !== 'filter'}
               className={cn(
                 "transition-all duration-150",
                 mode === 'filter'
@@ -185,7 +201,7 @@ export function CanvasControls({
                   : "opacity-0 scale-95 pointer-events-none absolute"
               )}
             >
-              <div className="control-surface px-2 h-11 flex items-center gap-1 overflow-x-auto max-w-[60vw] scrollbar-none">
+              <div className="control-surface px-2 h-11 flex items-center gap-1 overflow-x-auto max-w-[60vw] scrollbar-none" role="group" aria-label="Filter by category">
                 <FilterPill
                   active={selectedCategory === null}
                   onClick={() => onCategoryChange(null)}
@@ -227,6 +243,10 @@ export function CanvasControls({
 
       {/* Info modal */}
       <div
+        inert={!isInfoOpen}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="about-modal-title"
         className={cn(
           "fixed inset-0 z-50 flex items-center justify-center transition-all duration-150",
           isInfoOpen
@@ -246,18 +266,20 @@ export function CanvasControls({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-medium text-white">About</h2>
+            <h2 id="about-modal-title" className="text-base font-medium text-white">About</h2>
             <button
+              ref={infoCloseRef}
               onClick={() => setIsInfoOpen(false)}
+              aria-label="Close about"
               className="size-7 rounded-full flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/5 transition-colors duration-150"
             >
               <X className="size-4" />
             </button>
           </div>
           <div className="text-neutral-400 text-sm leading-relaxed space-y-4">
-            <p><span className="text-white">"Can You Imagine?"</span> is an ongoing series of fictional interface designs by Soren Iverson.</p>
+            <p><span className="text-white">&ldquo;Can You Imagine?&rdquo;</span> is an ongoing series of fictional interface designs by Soren Iverson.</p>
             <p>Each piece takes a familiar digital experience and subverts it in an unexpected way. The designs look real, but are unhinged or dystopian, representing the absurdity of dark patterns and behaviors normalized by large technology companies.</p>
-            <p>These interfaces have been shared widely online, often because people genuinely weren't sure if what they were looking at was fake. In some cases, concepts have since been shipped by real companies (DoorDash financing options, Instagram algorithm controls).</p>
+            <p>These interfaces have been shared widely online, often because people genuinely weren&rsquo;t sure if what they were looking at was fake. In some cases, concepts have since been shipped by real companies (DoorDash financing options, Instagram algorithm controls).</p>
             <p>The work has been featured in <span className="text-neutral-300">Wired</span>, <span className="text-neutral-300">Creative Review</span>, <span className="text-neutral-300">Business Insider</span>, <span className="text-neutral-300">Reuters</span>, <span className="text-neutral-300">SF Gate</span>, <span className="text-neutral-300">Snopes</span>, and more. Soren continues to make interfaces, though not on a daily basis as he did for the first two years of this practice. All concepts were created by Soren in Figma and other design tools.</p>
             <div className="pt-2 text-xs text-neutral-500">
               <p>Site design – Soren Iverson</p>
@@ -330,19 +352,6 @@ export function CanvasControls({
         .scrollbar-none::-webkit-scrollbar {
           display: none;
         }
-
-        /* Filter pill hover - sliding background from left */
-        .filter-pill:not([data-active]) {
-          background-image: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.05));
-          background-size: 0% 100%;
-          background-repeat: no-repeat;
-          background-position: left center;
-          transition: background-size 0.2s ease-out, color 0.15s;
-        }
-
-        .filter-pill:not([data-active]):hover {
-          background-size: 100% 100%;
-        }
       `}</style>
     </>
   )
@@ -363,6 +372,8 @@ function ControlButton({
     <button
       onClick={onClick}
       title={title}
+      aria-label={title}
+      aria-pressed={active}
       className={cn(
         "size-12 sm:size-11 rounded-full flex items-center justify-center transition-all duration-150",
         "bg-neutral-800/85 backdrop-blur-xl border border-white/[0.06]",
@@ -388,8 +399,9 @@ function FilterPill({
     <button
       onClick={onClick}
       data-active={active || undefined}
+      aria-pressed={active}
       className={cn(
-        "filter-pill relative px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors duration-150",
+        "relative px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors duration-150",
         active
           ? "text-white bg-white/15"
           : "text-neutral-400 hover:text-white"

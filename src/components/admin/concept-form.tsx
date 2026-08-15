@@ -69,25 +69,91 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
     setImageUrl('')
   }, [])
 
-  const uploadImage = async (file: File): Promise<string> => {
-    const supabase = createClient()
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+  // Derived sizes, matching scripts/generate-thumbnails.ts and the existing
+  // `thumbnails/<stem>.jpg` / `mid/<stem>.jpg` layout in the bucket.
+  const THUMB_WIDTH = 150
+  const MID_WIDTH = 800
+  const JPEG_QUALITY = 0.82
 
-    const { error } = await supabase.storage
-      .from('concepts')
-      .upload(fileName, file, {
+  /** Downscale to `maxWidth` (never upscale) and encode as JPEG. */
+  const resizeToJpeg = async (
+    bitmap: ImageBitmap,
+    maxWidth: number
+  ): Promise<Blob> => {
+    const scale = Math.min(1, maxWidth / bitmap.width)
+    const width = Math.max(1, Math.round(bitmap.width * scale))
+    const height = Math.max(1, Math.round(bitmap.height * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Could not get a 2D canvas context')
+    ctx.drawImage(bitmap, 0, 0, width, height)
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY)
+    )
+    if (!blob) throw new Error('Could not encode the resized image')
+    return blob
+  }
+
+  interface UploadedImage {
+    imageUrl: string
+    thumbnailUrl: string
+    midUrl: string
+    width: number
+    height: number
+  }
+
+  /**
+   * Uploads the original plus both derived sizes.
+   *
+   * Every display surface prefers `thumbnail_url` / `mid_url` over `image_url`,
+   * so writing only the original means a replaced image never actually appears
+   * anywhere, and a new concept falls back to a multi-megabyte PNG in a 72px
+   * canvas tile.
+   */
+  const uploadImage = async (file: File): Promise<UploadedImage> => {
+    const supabase = createClient()
+    const fileExt = file.name.split('.').pop() || 'png'
+    const stem = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const fileName = `${stem}.${fileExt}`
+
+    const bitmap = await createImageBitmap(file)
+    const [thumbBlob, midBlob] = await Promise.all([
+      resizeToJpeg(bitmap, THUMB_WIDTH),
+      resizeToJpeg(bitmap, MID_WIDTH),
+    ])
+    const { width, height } = bitmap
+    bitmap.close()
+
+    const uploads: Array<[string, Blob, string]> = [
+      [fileName, file, file.type || 'image/png'],
+      [`thumbnails/${stem}.jpg`, thumbBlob, 'image/jpeg'],
+      [`mid/${stem}.jpg`, midBlob, 'image/jpeg'],
+    ]
+
+    for (const [path, body, contentType] of uploads) {
+      const { error } = await supabase.storage.from('concepts').upload(path, body, {
         cacheControl: '31536000',
+        contentType,
         upsert: false,
       })
+      if (error) throw error
+    }
 
-    if (error) throw error
+    const publicUrl = (path: string) =>
+      supabase.storage.from('concepts').getPublicUrl(path).data.publicUrl
 
-    const { data: { publicUrl } } = supabase.storage
-      .from('concepts')
-      .getPublicUrl(fileName)
-
-    return publicUrl
+    return {
+      imageUrl: publicUrl(fileName),
+      thumbnailUrl: publicUrl(`thumbnails/${stem}.jpg`),
+      midUrl: publicUrl(`mid/${stem}.jpg`),
+      width,
+      height,
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,13 +174,16 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
 
     try {
       const supabase = createClient()
-      let finalImageUrl = imageUrl
 
       // Upload new image if selected
+      let uploaded: UploadedImage | null = null
       if (imageFile) {
         setUploading(true)
-        finalImageUrl = await uploadImage(imageFile)
-        setUploading(false)
+        try {
+          uploaded = await uploadImage(imageFile)
+        } finally {
+          setUploading(false)
+        }
       }
 
       const conceptData = {
@@ -124,7 +193,17 @@ export function ConceptForm({ concept, categories }: ConceptFormProps) {
         category: category.trim() || null,
         date_posted: datePosted || null,
         is_published: isPublished,
-        image_url: finalImageUrl,
+        // Write all three tiers together. Leaving thumbnail_url/mid_url stale
+        // is what made image replacement a silent no-op.
+        ...(uploaded
+          ? {
+              image_url: uploaded.imageUrl,
+              thumbnail_url: uploaded.thumbnailUrl,
+              mid_url: uploaded.midUrl,
+              image_width: uploaded.width,
+              image_height: uploaded.height,
+            }
+          : { image_url: imageUrl }),
       }
 
       if (isEditing) {

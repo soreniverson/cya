@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
-import type { Concept, Category } from '@/lib/types'
+import type { CanvasConcept, Category } from '@/lib/types'
 import { PixiCanvas, type PixiCanvasHandle } from './PixiCanvas'
 import { CanvasControls } from './CanvasControls'
 import { ConceptLightbox } from './ConceptLightbox'
 import { percentToZoom, zoomToPercent, DEFAULT_ZOOM, MIN_ZOOM, CELL_SIZE } from './canvas-utils'
 
 interface CanvasViewerProps {
-  concepts: Concept[]
+  concepts: CanvasConcept[]
   categories: Category[]
 }
 
@@ -22,7 +22,7 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
   const [zoomPercent, setZoomPercent] = useState(zoomToPercent(DEFAULT_ZOOM))
 
   // Lightbox state
-  const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null)
+  const [selectedConcept, setSelectedConcept] = useState<CanvasConcept | null>(null)
 
   // Compute filtered indices
   const filteredIndices = useMemo(() => {
@@ -45,39 +45,44 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
 
   // Auto-zoom to fit filtered items when filter changes
   useEffect(() => {
-    if (selectedCategory && filteredIndices.size > 0) {
-      // Calculate zoom needed to fit all filtered items
-      const count = filteredIndices.size
-      const cols = Math.ceil(Math.sqrt(count * 1.5))
-      const rows = Math.ceil(count / cols)
+    if (!selectedCategory || filteredIndices.size === 0) return
 
-      // Estimate cluster size in pixels
-      const clusterWidth = cols * CELL_SIZE
-      const clusterHeight = rows * CELL_SIZE
+    // Calculate zoom needed to fit all filtered items
+    const count = filteredIndices.size
+    const cols = Math.ceil(Math.sqrt(count * 1.5))
+    const rows = Math.ceil(count / cols)
 
-      // Get viewport size (use window as approximation)
-      const viewportWidth = window.innerWidth
-      const viewportHeight = window.innerHeight - 120 // Account for controls
+    // Estimate cluster size in pixels
+    const clusterWidth = cols * CELL_SIZE
+    const clusterHeight = rows * CELL_SIZE
 
-      // Calculate zoom to fit cluster with padding
-      const zoomToFitWidth = viewportWidth / (clusterWidth * 1.2)
-      const zoomToFitHeight = viewportHeight / (clusterHeight * 1.2)
-      const idealZoom = Math.min(zoomToFitWidth, zoomToFitHeight)
+    // Get viewport size (use window as approximation)
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight - 120 // Account for controls
 
-      // Clamp to reasonable range and apply
-      const targetZoom = Math.max(MIN_ZOOM, Math.min(0.5, idealZoom))
-      const targetPercent = zoomToPercent(targetZoom)
+    // Calculate zoom to fit cluster with padding
+    const zoomToFitWidth = viewportWidth / (clusterWidth * 1.2)
+    const zoomToFitHeight = viewportHeight / (clusterHeight * 1.2)
+    const idealZoom = Math.min(zoomToFitWidth, zoomToFitHeight)
 
-      // Only zoom out if current zoom would cut off items
-      if (zoomPercent > targetPercent + 5) {
-        setZoomPercent(targetPercent)
-        canvasRef.current?.setZoom(targetZoom)
-      }
+    // Clamp to reasonable range and apply
+    const targetZoom = Math.max(MIN_ZOOM, Math.min(0.5, idealZoom))
+    const targetPercent = zoomToPercent(targetZoom)
+
+    // Read live zoom from the canvas rather than the `zoomPercent` state: the
+    // state is not in this effect's dependencies, so it would be stale. Driving
+    // the canvas imperatively also avoids a setState cascade here - the canvas
+    // reports the new zoom back through onZoomChange as it animates.
+    const currentPercent = canvasRef.current?.getZoomPercent() ?? zoomToPercent(DEFAULT_ZOOM)
+
+    // Only zoom out if current zoom would cut off items
+    if (currentPercent > targetPercent + 5) {
+      canvasRef.current?.setZoom(targetZoom)
     }
   }, [selectedCategory, filteredIndices.size])
 
   // Handlers
-  const handleCardClick = useCallback((concept: Concept) => {
+  const handleCardClick = useCallback((concept: CanvasConcept) => {
     setSelectedConcept(concept)
   }, [])
 
@@ -115,8 +120,6 @@ export function CanvasViewer({ concepts, categories }: CanvasViewerProps) {
         zoomPercent={zoomPercent}
         onZoomChange={handleZoomChange}
         onRandomConcept={handleRandomConcept}
-        filteredCount={filteredIndices.size}
-        totalCount={concepts.length}
       />
 
       {/* Lightbox */}

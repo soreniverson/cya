@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Pencil, Trash2, Eye, EyeOff, Check, X } from 'lucide-react'
+import { Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
 import type { Concept } from '@/lib/types'
 
 interface AdminConceptListProps {

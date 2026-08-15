@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
 import { Application } from 'pixi.js'
-import type { Concept } from '@/lib/types'
+import type { CanvasConcept } from '@/lib/types'
 import { useViewport } from './useViewport'
 import { useTextureLoader } from './useTextureLoader'
 import { useSpritePool } from './useSpritePool'
@@ -24,10 +24,10 @@ export interface PixiCanvasHandle {
 }
 
 interface PixiCanvasProps {
-  concepts: Concept[]
+  concepts: CanvasConcept[]
   filteredIndices: Set<number>
   isClusterMode: boolean  // true = cluster matching cards in center (text search only)
-  onCardClick: (concept: Concept) => void
+  onCardClick: (concept: CanvasConcept) => void
   onZoomChange?: (percent: number) => void
 }
 
@@ -52,7 +52,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     const lastZoomPercentRef = useRef<number>(-1)
     const zoomThrottleRef = useRef<number>(0)
     const tickRef = useRef<() => void>(() => {})
-    const mountTimeRef = useRef(Date.now()) // Track mount time for click prevention
+    // Set in the init effect - calling Date.now() during render is impure.
+    const mountTimeRef = useRef(0) // Track mount time for click prevention
 
     // Memoize gridConfig to prevent useViewport from resetting on every render
     const gridConfig = useMemo(() => computeGridConfig(concepts.length), [concepts.length])
@@ -113,9 +114,12 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         }
       }
 
-      // Keep running while animating, dragging, sprites animating, OR images loading
+      // Keep running while animating, dragging, sprites animating, OR images loading.
+      // Recurse through tickRef, not `tick` directly: `tick` is a per-render
+      // closure, so recursing on it pins the loop to the state it started with
+      // and a filter change during image loading would never take effect.
       if (viewportAnimating || isDraggingRef.current || spritesAnimating || textureLoader.hasPendingLoads()) {
-        rafRef.current = requestAnimationFrame(tick)
+        rafRef.current = requestAnimationFrame(() => tickRef.current())
       } else {
         isRunningRef.current = false
         // Final zoom update when animation ends
@@ -129,16 +133,20 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
     }, [viewport, render, onZoomChange, textureLoader])
 
-    // Keep tickRef updated so initApp can access it
-    tickRef.current = tick
+    // Keep tickRef pointing at the newest closure. The rAF loop calls
+    // tickRef.current() rather than a captured `tick`, so every frame picks up
+    // current props. Assigned in an effect, not during render.
+    useEffect(() => {
+      tickRef.current = tick
+    }, [tick])
 
     // Start animation loop
     const ensureRunning = useCallback(() => {
       if (!isRunningRef.current) {
         isRunningRef.current = true
-        rafRef.current = requestAnimationFrame(tick)
+        rafRef.current = requestAnimationFrame(() => tickRef.current())
       }
-    }, [tick])
+    }, [])
 
     // Initialize PixiJS
     useEffect(() => {
@@ -201,6 +209,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
 
         if (appRef.current) {
           spritePool.cleanup()
+          textureLoader.destroy()
           appRef.current.destroy(true)
           appRef.current = null
         }
@@ -325,8 +334,7 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         if (e.touches.length === 2) {
           e.preventDefault()
           lastTouchDistance = getTouchDistance(e.touches)
-          const center = getTouchCenter(e.touches)
-          viewport.onPinchStart(lastTouchDistance, center.x, center.y)
+          viewport.onPinchStart(lastTouchDistance)
           ensureRunning()
         }
       }
@@ -382,6 +390,8 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         ref={containerRef}
         className="w-full h-full cursor-grab touch-none"
         style={{ touchAction: 'none' }}
+        role="application"
+        aria-label={`Infinite canvas of ${concepts.length} concepts. Drag to pan, scroll to zoom, click a concept to open it. A text list of every concept is available below.`}
       />
     )
   }

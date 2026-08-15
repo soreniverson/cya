@@ -46,7 +46,7 @@ export interface ViewportState {
   onDragMove: (screenX: number, screenY: number) => void
   onDragEnd: () => void
   onWheel: (deltaY: number, screenX: number, screenY: number) => void
-  onPinchStart: (distance: number, centerX: number, centerY: number) => void
+  onPinchStart: (distance: number) => void
   onPinchMove: (distance: number, centerX: number, centerY: number) => void
   onPinchEnd: () => void
 
@@ -176,7 +176,7 @@ export function useViewport(gridConfig: GridConfig): ViewportState {
   }, [])
 
   // Pinch zoom
-  const onPinchStart = useCallback((distance: number, centerX: number, centerY: number) => {
+  const onPinchStart = useCallback((distance: number) => {
     isPinchingRef.current = true
     pinchStartDistanceRef.current = distance
     pinchStartZoomRef.current = zoomRef.current

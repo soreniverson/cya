@@ -1,8 +1,13 @@
 import { createStaticClient } from '@/lib/supabase/static'
+import { SITE_URL } from '@/lib/site'
 import type { MetadataRoute } from 'next'
 
+// Without this the sitemap is prerendered once at deploy and then frozen, so
+// concepts added afterwards never appear and renamed slugs linger as 404s.
+export const revalidate = 3600
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://canyouimagine.com'
+  const baseUrl = SITE_URL
 
   const supabase = createStaticClient()
 

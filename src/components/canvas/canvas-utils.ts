@@ -1,4 +1,4 @@
-import type { Concept } from '@/lib/types'
+import type { CanvasConcept } from '@/lib/types'
 
 // Grid configuration
 export const CARD_SIZE = 240
@@ -109,11 +109,11 @@ function hslToHex(h: number, s: number, l: number): number {
  * Two-tier system: thumb (300px) for zoomed out, mid (800px) for zoomed in
  * Never returns full-res URL - that's only for lightbox/detail page
  */
-export function getThumbUrl(concept: Concept): string {
+export function getThumbUrl(concept: CanvasConcept): string {
   return concept.thumbnail_url || concept.image_url
 }
 
-export function getMidUrl(concept: Concept): string {
+export function getMidUrl(concept: CanvasConcept): string {
   // Prefer mid_url if available, otherwise fall back to full-res original
   // (Temporary: until mid-res images are pre-generated at upload time)
   return concept.mid_url || concept.image_url
@@ -153,7 +153,7 @@ export interface Viewport {
 }
 
 export interface VisibleCard {
-  concept: Concept
+  concept: CanvasConcept
   index: number
   worldX: number
   worldY: number
@@ -170,6 +170,18 @@ export interface VisibleCard {
  * Aims for a roughly square grid
  */
 export function computeGridConfig(conceptCount: number): GridConfig {
+  // Guard against an empty archive: cols would be 0, making tileWidth 0, which
+  // makes the tile bounds in getVisibleCards ±Infinity and hangs the loop.
+  if (!Number.isFinite(conceptCount) || conceptCount < 1) {
+    return {
+      cols: 1,
+      rows: 1,
+      tileWidth: CELL_SIZE,
+      tileHeight: CELL_SIZE,
+      totalConcepts: 0,
+    }
+  }
+
   // Aim for ~30 columns, adjust rows accordingly
   const cols = Math.ceil(Math.sqrt(conceptCount * 1.2))
   const rows = Math.ceil(conceptCount / cols)
@@ -300,9 +312,21 @@ function normalizeToTile(value: number, tileSize: number): number {
 export function getVisibleCards(
   viewport: Viewport,
   config: GridConfig,
-  concepts: Concept[]
+  concepts: CanvasConcept[]
 ): VisibleCard[] {
   const visible: VisibleCard[] = []
+
+  // Nothing to tile, or a degenerate tile size would make the bounds below
+  // ±Infinity and the tile loop non-terminating.
+  if (
+    concepts.length === 0 ||
+    !(config.tileWidth > 0) ||
+    !(config.tileHeight > 0) ||
+    !Number.isFinite(viewport.zoom) ||
+    viewport.zoom <= 0
+  ) {
+    return visible
+  }
 
   // Calculate world bounds of viewport with margin
   const halfViewW = viewport.width / 2 / viewport.zoom
@@ -398,8 +422,12 @@ export function hitTestCard(
   screenY: number,
   viewport: Viewport,
   config: GridConfig,
-  concepts: Concept[]
-): { concept: Concept; index: number } | null {
+  concepts: CanvasConcept[]
+): { concept: CanvasConcept; index: number } | null {
+  if (concepts.length === 0 || !(config.tileWidth > 0) || !(config.tileHeight > 0)) {
+    return null
+  }
+
   // Convert screen to world
   const world = screenToWorld(screenX, screenY, viewport)
 
@@ -411,22 +439,24 @@ export function hitTestCard(
   const col = Math.floor(localX / CELL_SIZE)
   const row = Math.floor(localY / CELL_SIZE)
 
-  // Check if we're actually over a card (not the gap)
+  // Check if we're actually over a card (not the gap).
+  // The card occupies [0, CARD_SIZE), so CARD_SIZE itself is already the gap.
   const cellX = localX % CELL_SIZE
   const cellY = localY % CELL_SIZE
 
-  if (cellX > CARD_SIZE || cellY > CARD_SIZE) {
+  if (cellX >= CARD_SIZE || cellY >= CARD_SIZE) {
     return null // In the gap
   }
 
+  // Wrap exactly as getVisibleCards does. The last row of a tile holds
+  // cols*rows - concepts.length trailing cells that render a wrapped concept;
+  // without this wrap those cards are painted but dead to the pointer.
   const index = row * config.cols + col
-  if (index >= concepts.length) {
-    return null // Empty grid cell (beyond concept array)
-  }
+  const conceptIndex = index % concepts.length
 
   return {
-    concept: concepts[index],
-    index,
+    concept: concepts[conceptIndex],
+    index: conceptIndex,
   }
 }
 

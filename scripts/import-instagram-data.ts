@@ -101,7 +101,7 @@ async function main() {
 
   if (matched.length > 0) {
     console.log('MATCHES (first 10):')
-    for (const { post, concept } of matched.slice(0, 10)) {
+    for (const { post } of matched.slice(0, 10)) {
       console.log(`  "${post.caption.slice(0, 50)}..." → ${parseDate(post.date)}`)
     }
     if (matched.length > 10) console.log(`  ... +${matched.length - 10} more\n`)
@@ -128,7 +128,7 @@ async function main() {
         })
         .eq('id', concept.id)
 
-      error ? fail++ : ok++
+      if (error) fail++; else ok++
     }
 
     console.log(`✅ ${ok} updated, ❌ ${fail} failed`)

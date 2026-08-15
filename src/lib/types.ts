@@ -15,6 +15,25 @@ export interface Concept {
   updated_at: string
 }
 
+/**
+ * The subset the infinite canvas needs. The homepage serialises every published
+ * row into its payload, so it deliberately omits `search_vector`, `is_published`,
+ * `created_at`, `updated_at` and the image dimensions - none of which the canvas
+ * or its lightbox read.
+ */
+export type CanvasConcept = Pick<
+  Concept,
+  | 'id'
+  | 'slug'
+  | 'title'
+  | 'caption'
+  | 'image_url'
+  | 'thumbnail_url'
+  | 'mid_url'
+  | 'category'
+  | 'date_posted'
+>
+
 export interface ConceptWithCount {
   concepts: Concept[]
   totalCount: number

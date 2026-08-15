@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "eslint --max-warnings 0 && next build",
     "start": "next start",
     "lint": "eslint",
     "batch-upload": "tsx scripts/batch-upload.ts"

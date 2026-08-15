@@ -3,7 +3,7 @@
 import { useRef, useCallback } from 'react'
 import { Container, Sprite, Texture, Graphics, Application } from 'pixi.js'
 import type { TextureLoader } from './useTextureLoader'
-import type { Concept } from '@/lib/types'
+import type { CanvasConcept } from '@/lib/types'
 import {
   type VisibleCard,
   type Viewport,
@@ -17,8 +17,6 @@ import {
   CARD_SIZE,
   CELL_SIZE,
   LOD,
-  MIN_ZOOM,
-  MAX_ZOOM,
 } from './canvas-utils'
 
 interface PooledCard {
@@ -52,13 +50,6 @@ interface PooledCard {
 // Animation config
 const LERP_SPEED = 0.12 // How fast cards animate (0-1, higher = faster)
 const CLUSTER_CARD_SCALE = 1.0 // Scale of cards in cluster
-const MAX_BORDER_RADIUS = 2 // Max border radius when fully zoomed in
-
-// Calculate border radius based on zoom (0 at min zoom, MAX_BORDER_RADIUS at max zoom)
-function getBorderRadius(zoom: number): number {
-  const t = (zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)
-  return Math.max(0, Math.min(MAX_BORDER_RADIUS, t * MAX_BORDER_RADIUS))
-}
 
 export interface SpritePool {
   init: (app: Application) => void
@@ -68,7 +59,7 @@ export interface SpritePool {
     textureLoader: TextureLoader,
     filteredIndices: Set<number>,
     hoveredIndex: number | null,
-    concepts: Concept[],
+    concepts: CanvasConcept[],
     isClusterMode: boolean,
     gridConfig: GridConfig
   ) => boolean // Returns true if still animating
@@ -196,8 +187,7 @@ export function useSpritePool(): SpritePool {
   // Calculate cluster layout centered on viewport
   const calculateClusterLayout = useCallback((
     filteredIndices: Set<number>,
-    viewport: Viewport,
-    totalConcepts: number
+    viewport: Viewport
   ) => {
     const layout = new Map<number, { x: number; y: number }>()
     const indices = Array.from(filteredIndices).sort((a, b) => a - b)
@@ -240,7 +230,7 @@ export function useSpritePool(): SpritePool {
     textureLoader: TextureLoader,
     filteredIndices: Set<number>,
     hoveredIndex: number | null,
-    concepts: Concept[],
+    concepts: CanvasConcept[],
     isClusterMode: boolean,
     gridConfig: GridConfig
   ): boolean => {
@@ -266,7 +256,7 @@ export function useSpritePool(): SpritePool {
 
     if (isClusterMode) {
       if (currentSignature !== lastFilterSignatureRef.current || !lastClusterModeRef.current || centerMoved) {
-        clusterLayoutRef.current = calculateClusterLayout(filteredIndices, viewport, totalConcepts)
+        clusterLayoutRef.current = calculateClusterLayout(filteredIndices, viewport)
         lastFilterSignatureRef.current = currentSignature
         lastClusterCenterRef.current = { x: viewport.pan.x, y: viewport.pan.y }
       }
@@ -516,11 +506,15 @@ export function useSpritePool(): SpritePool {
       }
     }
 
-    // Release cards no longer needed
+    // Release cards no longer needed.
+    // PooledCard objects are a deliberately mutable Pixi object pool, not React
+    // state - mutating them in place is the point. The immutability rule can't
+    // tell the difference, so it is suppressed for this block only.
     for (const [key, card] of activeCardsRef.current) {
       if (!neededKeys.has(key)) {
         // If card is fading out, keep it until fully transparent
         if (card.currentAlpha > 0.01) {
+          // eslint-disable-next-line react-hooks/immutability
           card.targetAlpha = 0
           card.targetScale = 0.8
           card.currentAlpha = lerp(card.currentAlpha, 0, LERP_SPEED)

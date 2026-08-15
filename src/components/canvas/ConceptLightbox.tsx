@@ -1,17 +1,20 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Concept } from '@/lib/types'
+import type { CanvasConcept } from '@/lib/types'
 
 interface ConceptLightboxProps {
-  concept: Concept | null
+  concept: CanvasConcept | null
   onClose: () => void
 }
 
 export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
+
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -23,6 +26,17 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [concept, onClose])
 
+  // Move focus into the dialog on open, and restore it on close.
+  useEffect(() => {
+    if (concept) {
+      openerRef.current = document.activeElement as HTMLElement | null
+      closeRef.current?.focus()
+    } else {
+      openerRef.current?.focus()
+      openerRef.current = null
+    }
+  }, [concept])
+
   const formattedDate = concept?.date_posted
     ? new Date(concept.date_posted).toLocaleDateString('en-US', {
         year: 'numeric',
@@ -33,6 +47,10 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
 
   return (
     <div
+      inert={!concept}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={concept ? 'lightbox-title' : undefined}
       className={cn(
         "fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-150",
         concept
@@ -57,7 +75,9 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
         <div className="modal-surface overflow-hidden">
           {/* Close button */}
           <button
+            ref={closeRef}
             onClick={onClose}
+            aria-label="Close concept"
             className="absolute top-4 right-4 z-10 size-8 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-sm text-white/70 hover:text-white hover:bg-black/60 transition-colors duration-150"
           >
             <X className="size-4" />
@@ -81,7 +101,7 @@ export function ConceptLightbox({ concept, onClose }: ConceptLightboxProps) {
           {concept && (
             <div className="p-5 space-y-3">
               {/* Title */}
-              <h2 className="text-lg font-medium text-white">{concept.title}</h2>
+              <h2 id="lightbox-title" className="text-lg font-medium text-white">{concept.title}</h2>
 
               {/* Meta */}
               <div className="flex items-center gap-2 text-sm">
