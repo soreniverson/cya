@@ -531,6 +531,64 @@ export function useSpritePool(): SpritePool {
     // Process texture queue
     textureLoader.processQueue()
 
+    /**
+     * Read-only snapshot of what is actually on screen, for debugging from the
+     * console: window.__cyaCanvas()
+     *
+     * The loader can report itself healthy while tiles are blank, because a
+     * blank tile has three quite different causes and only one of them is a
+     * loading problem:
+     *   blankNoTexture   - the image was never fetched (a request-side bug)
+     *   blankWithTexture - the texture is cached but not drawn (a render bug)
+     *   fadingIn         - mid fade, i.e. nothing wrong, just caught in motion
+     * Built lazily so it costs nothing unless called.
+     */
+    if (typeof window !== 'undefined') {
+      ;(window as unknown as Record<string, unknown>).__cyaCanvas = () => {
+        let drawn = 0
+        let fadingIn = 0
+        let blankNoTexture = 0
+        let blankWithTexture = 0
+        const samples: unknown[] = []
+        for (const [key, card] of activeCardsRef.current) {
+          const c = concepts[card.conceptIndex % concepts.length]
+          const url = c ? getThumbUrl(c) : null
+          const hasTexture = url ? !!textureLoader.getTexture(url) : false
+          const spriteVisible = !!card.imageSprite?.visible
+          if (spriteVisible && card.imageAlpha > 0.9) {
+            drawn++
+          } else if (!hasTexture) {
+            blankNoTexture++
+            if (samples.length < 6) samples.push({ why: 'no-texture', key, url })
+          } else if (card.imageAlpha <= 0.9) {
+            fadingIn++
+          } else {
+            blankWithTexture++
+            if (samples.length < 6) {
+              samples.push({
+                why: 'texture-cached-but-not-drawn',
+                key,
+                url,
+                spriteVisible,
+                imageAlpha: +card.imageAlpha.toFixed(2),
+                cardAlpha: +card.currentAlpha.toFixed(2),
+              })
+            }
+          }
+        }
+        return {
+          activeCards: activeCardsRef.current.size,
+          drawn,
+          fadingIn,
+          blankNoTexture,
+          blankWithTexture,
+          zoom: +viewport.zoom.toFixed(3),
+          viewport: `${Math.round(viewport.width)}x${Math.round(viewport.height)}`,
+          samples,
+        }
+      }
+    }
+
     return isAnimating
   }, [getContainer, acquireCard, releaseCard, calculateClusterLayout])
 
