@@ -162,6 +162,16 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
     }, [])
 
+    // Start the atlas before Pixi. Fetching and decoding it needs no renderer,
+    // and app.init() plus hydration measured ~2.2s on production - during which
+    // the atlas bytes were already sitting in the HTTP cache, unused.
+    useEffect(() => {
+      atlas.load(() => {
+        lastViewportHash = ''
+        if (appRef.current) { render(true); ensureRunning() }
+      })
+    }, [atlas, render, ensureRunning])
+
     // Initialize PixiJS
     useEffect(() => {
       const container = containerRef.current
@@ -193,12 +203,6 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
         app.stage.addChild(spritePool.getContainer())
 
         appRef.current = app
-
-        // Preview atlas first, full atlas behind it. Both repaint on arrival.
-        atlas.load(() => {
-          lastViewportHash = ''
-          if (appRef.current) { render(true); ensureRunning() }
-        })
 
         // Set initial size
         viewport.setSize(app.screen.width, app.screen.height)
