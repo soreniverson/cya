@@ -221,6 +221,19 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
     // repaint itself - otherwise it sits in the cache, undrawn.
     useEffect(() => {
       textureLoader.setOnTextureLoaded(() => ensureRunning())
+
+      // Draining the queue was decoupled from requestAnimationFrame, but
+      // *filling* it still is not: requestLoad is only called from
+      // spritePool.update, which runs inside the render loop. So while rAF is
+      // halted, anything already queued keeps downloading but newly-exposed
+      // cards are never asked for. This ticks the render path on a timer so the
+      // visible set keeps being evaluated even when rAF is not running.
+      const keepAlive = window.setInterval(() => {
+        if (document.visibilityState !== 'visible' && appRef.current) {
+          render(true)
+        }
+      }, 1000)
+
       const handleVisibility = () => {
         // requestAnimationFrame is halted while hidden. On return, restart the
         // loop so everything fetched in the background gets painted.
@@ -228,10 +241,11 @@ export const PixiCanvas = forwardRef<PixiCanvasHandle, PixiCanvasProps>(
       }
       document.addEventListener('visibilitychange', handleVisibility)
       return () => {
+        window.clearInterval(keepAlive)
         textureLoader.setOnTextureLoaded(null)
         document.removeEventListener('visibilitychange', handleVisibility)
       }
-    }, [textureLoader, ensureRunning])
+    }, [textureLoader, ensureRunning, render])
 
     // Handle resize
     useEffect(() => {

@@ -220,6 +220,26 @@ export function useTextureLoader(): TextureLoader {
     return loadQueueMap.current.size > 0 || activeLoads.current > 0
   }, [])
 
+  /**
+   * Read-only snapshot for debugging from the console. Exposed because a blank
+   * tile is otherwise indistinguishable from a slow one, and the interesting
+   * state (queued / failed / cached) lives entirely in refs.
+   *   window.__cyaLoader()
+   */
+  if (typeof window !== 'undefined') {
+    ;(window as unknown as Record<string, unknown>).__cyaLoader = () => ({
+      cachedTextures: textureCache.current.size,
+      queued: loadQueueMap.current.size,
+      inFlight: activeLoads.current,
+      permanentlyFailed: failedSet.current.size,
+      failedUrls: Array.from(failedSet.current).slice(0, 20),
+      awaitingRetry: retryAfter.current.size,
+      maxConcurrent: MAX_CONCURRENT_LOADS,
+      cacheCap: MAX_CACHED_TEXTURES,
+      visibility: document.visibilityState,
+    })
+  }
+
   // Release every texture on unmount so a client-side navigation away from the
   // canvas doesn't strand the whole archive in GPU memory.
   const destroy = useCallback(() => {
